@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "965193239452",
+    "project_id": "fyp-pwd",
+    "storage_bucket": "fyp-pwd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:965193239452:android:847e8b6867b9e5d4475659",
+        "android_client_info": {
+          "package_name": "com.example.safe_pwd"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDH7qJR8ZIUjk_xKAEFKmFt76CAhrIugVo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

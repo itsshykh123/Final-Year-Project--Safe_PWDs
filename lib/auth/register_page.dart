@@ -1,7 +1,74 @@
+import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore
 import 'package:flutter/material.dart';
 
-class RegisterPage extends StatelessWidget {
+class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
+
+  @override
+  State<RegisterPage> createState() => _RegisterPageState();
+}
+
+class _RegisterPageState extends State<RegisterPage> {
+  // 1. Controllers to get text from fields
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  bool _isLoading = false;
+
+  // 2. The Register Function
+  void _registerUser() async {
+    final String name = _nameController.text.trim();
+    final String email = _emailController.text.trim();
+    final String password = _passwordController.text.trim();
+
+    if (name.isEmpty || email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Please fill all fields")));
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final firestore = FirebaseFirestore.instance;
+
+      // Check if user already exists
+      final existingUser = await firestore
+          .collection('users')
+          .where('email', isEqualTo: email)
+          .get();
+
+      if (existingUser.docs.isNotEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Email already registered")),
+        );
+      } else {
+        // Create new user document
+        await firestore.collection('users').add({
+          'Name': name,
+          'email': email,
+          'password': password, // Storing plain text as requested
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Account Created Successfully!")),
+        );
+        Navigator.pop(context); // Go back to login
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error: $e")));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -12,22 +79,16 @@ class RegisterPage extends StatelessWidget {
         elevation: 0,
         leading: Padding(
           padding: const EdgeInsets.all(8),
-          child: Positioned(
-            top: 50,
-            left: 20,
-            child: CircleAvatar(
-              radius: 22,
-              backgroundColor: Colors.black.withOpacity(0.2),
-              child: IconButton(
-                icon: const Icon(
-                  Icons.arrow_back_ios_new,
-                  color: Colors.white,
-                  size: 18,
-                ),
-                onPressed: () {
-                  Navigator.pop(context);
-                },
+          child: CircleAvatar(
+            radius: 22,
+            backgroundColor: Colors.black,
+            child: IconButton(
+              icon: const Icon(
+                Icons.arrow_back_ios_new,
+                color: Colors.white,
+                size: 18,
               ),
+              onPressed: () => Navigator.pop(context),
             ),
           ),
         ),
@@ -35,9 +96,7 @@ class RegisterPage extends StatelessWidget {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(30),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Leaf Decoration
             Align(
               alignment: Alignment.topRight,
               child: Image.network(
@@ -46,7 +105,6 @@ class RegisterPage extends StatelessWidget {
                 color: const Color(0xFF2E5A3C),
               ),
             ),
-
             const Text(
               "Register",
               style: TextStyle(
@@ -61,13 +119,19 @@ class RegisterPage extends StatelessWidget {
             ),
             const SizedBox(height: 40),
 
-            _buildTextField("Full Name", Icons.person_outline),
+            // 3. Pass controllers to text fields
+            _buildTextField("Full Name", Icons.person_outline, _nameController),
             _buildTextField(
               "user@mail.com",
               Icons.email_outlined,
-              isCheck: true,
+              _emailController,
             ),
-            _buildTextField("Password", Icons.lock_outline, isPassword: true),
+            _buildTextField(
+              "Password",
+              Icons.lock_outline,
+              _passwordController,
+              isPassword: true,
+            ),
 
             const SizedBox(height: 30),
 
@@ -81,11 +145,15 @@ class RegisterPage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(30),
                   ),
                 ),
-                onPressed: () {},
-                child: const Text(
-                  "Register",
-                  style: TextStyle(color: Colors.white, fontSize: 18),
-                ), // Changed from Login to Register
+                onPressed: _isLoading
+                    ? null
+                    : _registerUser, // Disable while loading
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        "Register",
+                        style: TextStyle(color: Colors.white, fontSize: 18),
+                      ),
               ),
             ),
 
@@ -95,7 +163,6 @@ class RegisterPage extends StatelessWidget {
               style: TextStyle(color: Colors.grey, fontSize: 12),
             ),
             const SizedBox(height: 20),
-
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -106,7 +173,6 @@ class RegisterPage extends StatelessWidget {
                 _socialBtn(Icons.apple, Colors.black),
               ],
             ),
-
             const SizedBox(height: 30),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -118,12 +184,12 @@ class RegisterPage extends StatelessWidget {
                 GestureDetector(
                   onTap: () => Navigator.pop(context),
                   child: const Text(
-                    "Sign up",
+                    "Log in", // Corrected label
                     style: TextStyle(
                       color: Color(0xFF2E5A3C),
                       fontWeight: FontWeight.bold,
                     ),
-                  ), // Note: Image says Sign up, logically should be Login
+                  ),
                 ),
               ],
             ),
@@ -133,11 +199,12 @@ class RegisterPage extends StatelessWidget {
     );
   }
 
+  // 4. Added controller parameter to the helper widget
   Widget _buildTextField(
     String hint,
-    IconData icon, {
+    IconData icon,
+    TextEditingController controller, {
     bool isPassword = false,
-    bool isCheck = false,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 15),
@@ -146,14 +213,10 @@ class RegisterPage extends StatelessWidget {
         borderRadius: BorderRadius.circular(15),
       ),
       child: TextField(
+        controller: controller, // Link the controller
         obscureText: isPassword,
         decoration: InputDecoration(
           prefixIcon: Icon(icon, color: const Color(0xFF2E5A3C)),
-          suffixIcon: isCheck
-              ? const Icon(Icons.check, color: Colors.green)
-              : (isPassword
-                    ? const Icon(Icons.visibility_off, color: Colors.grey)
-                    : null),
           hintText: hint,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 15),

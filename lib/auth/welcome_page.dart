@@ -85,10 +85,10 @@ class WelcomeScreen extends StatelessWidget {
                     height: 55,
                     decoration: BoxDecoration(
                       // Translucent dark color for the button
-                      color: const Color(0xFF4A5A50).withOpacity(0.8),
+                      color: const Color(0xFF4A5A50).withValues(),
                       borderRadius: BorderRadius.circular(30),
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withValues(),
                         width: 1,
                       ),
                     ),
