@@ -29,21 +29,10 @@ class WelcomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
           // 1. Background Image with Dark Overlay
-          Container(
-            decoration: BoxDecoration(
-              image: DecorationImage(
-                // Replace this with your actual image asset
-                // image: AssetImage('assets/leaves_background.png'),
-                image: const NetworkImage(
-                  'https://i.pinimg.com/564x/3b/e1/c6/3be1c616049019023241061411743123.jpg',
-                ),
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
 
           // 2. Content centered vertically and horizontally
           Padding(
@@ -57,13 +46,17 @@ class WelcomeScreen extends StatelessWidget {
                 // Push content down a bit from the top
                 const SizedBox(height: 100),
                 // Main Title Text
-                const Text(
-                  "The best app to keep you safe\nwherever you go.",
-                  style: TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black,
-                    height: 1.2, // Adjust line height for better spacing
+                Center(
+                  child: Container(
+                    height: 200,
+                    width: 200,
+                    decoration: BoxDecoration(
+                      image: DecorationImage(
+                        // Replace this with your actual image asset
+                        image: AssetImage('assets/images/logo.png'),
+                        fit: BoxFit.cover,
+                      ),
+                    ),
                   ),
                 ),
 
@@ -85,7 +78,11 @@ class WelcomeScreen extends StatelessWidget {
                     height: 55,
                     decoration: BoxDecoration(
                       // Translucent dark color for the button
+<<<<<<< Updated upstream
                       color: const Color(0xFF4A5A50).withValues(),
+=======
+                      color: const Color.fromARGB(0, 2, 6, 82).withOpacity(0.8),
+>>>>>>> Stashed changes
                       borderRadius: BorderRadius.circular(30),
                       border: Border.all(
                         color: Colors.white.withValues(),
@@ -94,7 +91,7 @@ class WelcomeScreen extends StatelessWidget {
                     ),
                     child: const Center(
                       child: Text(
-                        "Sign in",
+                        "Sign In",
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -107,23 +104,42 @@ class WelcomeScreen extends StatelessWidget {
 
                 const SizedBox(height: 20),
 
-                // "Create an account" Button
-                Center(
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const RegisterPage(),
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const RegisterPage(),
+                      ),
+                    );
+                  },
+                  child: Center(
+                    child: Container(
+                      width: double.infinity,
+                      height: 55,
+                      decoration: BoxDecoration(
+                        // Translucent dark color for the button
+                        color: const Color.fromARGB(
+                          0,
+                          2,
+                          6,
+                          82,
+                        ).withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.2),
+                          width: 1,
                         ),
-                      );
-                    },
-                    child: const Text(
-                      "Create an account",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black,
+                      ),
+                      child: const Center(
+                        child: Text(
+                          "Create an Account",
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ),
                   ),

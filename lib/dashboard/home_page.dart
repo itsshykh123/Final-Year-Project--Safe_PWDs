@@ -3,6 +3,7 @@ import '../core/constants/app_colors.dart';
 import 'alerts_page.dart';
 import 'settings_page.dart';
 import 'profile_page.dart';
+import 'emergency_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -19,6 +20,7 @@ class _HomePageState extends State<HomePage> {
     const AlertsPage(),
     const SettingsPage(),
     const ProfilePage(),
+    const EmergencyPage(),
   ];
 
   @override
