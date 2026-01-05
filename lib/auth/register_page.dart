@@ -184,7 +184,11 @@ class _RegisterPageState extends State<RegisterPage> {
                 GestureDetector(
                   onTap: () => Navigator.pop(context),
                   child: const Text(
+<<<<<<< Updated upstream
                     "Log in", // Corrected label
+=======
+                    "Sign in",
+>>>>>>> Stashed changes
                     style: TextStyle(
                       color: Color(0xFF2E5A3C),
                       fontWeight: FontWeight.bold,
