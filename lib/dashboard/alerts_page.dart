@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class AlertsPage extends StatelessWidget {
-  const AlertsPage({Key? key}) : super(key: key);
+  const AlertsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -171,7 +171,7 @@ class AlertsPage extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
+            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)],
           ),
         ),
         padding: const EdgeInsets.all(16),
@@ -208,7 +208,7 @@ class AlertsPage extends StatelessWidget {
             Text(
               subtitle,
               style: TextStyle(
-                color: Colors.white.withOpacity(0.9),
+                color: Colors.white.withValues(alpha: 0.9),
                 fontSize: 13,
               ),
               maxLines: 2,

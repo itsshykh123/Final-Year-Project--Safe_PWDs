@@ -50,7 +50,7 @@ class _LoginPageState extends State<LoginPage> {
 
       // 4. Compare the passwords
       if (storedPassword == passwordInput) {
-        print("Login successful for: ${userDoc.get('Name')}");
+        debugPrint("Login successful for: ${userDoc.get('Name')}");
 
         if (mounted) {
           Navigator.pushReplacement(
@@ -87,7 +87,7 @@ class _LoginPageState extends State<LoginPage> {
                 ClipPath(
                   clipper: WaveClipper(),
                   child: Container(
-                    height: 400,
+                    height: 350,
                     width: double.infinity,
                     decoration: const BoxDecoration(
                       image: DecorationImage(
@@ -98,7 +98,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                     child: Container(
-                      color: const Color(0xFF2E5A3C).withOpacity(0.5),
+                      color: const Color(0xFF2E5A3C).withValues(alpha: 0.5),
                     ),
                   ),
                 ),
@@ -106,7 +106,7 @@ class _LoginPageState extends State<LoginPage> {
                   top: 50,
                   left: 20,
                   child: CircleAvatar(
-                    backgroundColor: Colors.white.withOpacity(0.3),
+                    backgroundColor: Colors.white.withValues(alpha: 0.3),
                     child: IconButton(
                       icon: const Icon(
                         Icons.arrow_back_ios_new,
@@ -260,10 +260,15 @@ class _LoginPageState extends State<LoginPage> {
         controller: controller,
         obscureText: isPassword,
         validator: (value) {
-          if (value == null || value.isEmpty) return "$hint is required";
-          if (!isPassword && !value.contains("@")) return "Enter a valid email";
-          if (isPassword && value.length < 6)
+          if (value == null || value.isEmpty) {
+            return "$hint is required";
+          }
+          if (!isPassword && !value.contains("@")) {
+            return "Enter a valid email";
+          }
+          if (isPassword && value.length < 6) {
             return "Password must be at least 6 characters";
+          }
           return null;
         },
         decoration: InputDecoration(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safe_pwd/services/notification_service.dart';
 import '../core/constants/app_colors.dart';
 import 'alerts_page.dart';
 import 'settings_page.dart';
@@ -19,7 +20,7 @@ class _HomePageState extends State<HomePage> {
     const DashboardHomeContent(),
     const AlertsPage(),
     const SettingsPage(),
-    const ProfilePage(),
+    const ProfilePage(userEmail: ''),
     const EmergencyPage(),
   ];
 
@@ -29,7 +30,7 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: const Color.fromARGB(255, 220, 33, 33),
-        title: const Text('SAFE-PWD'),
+        title: const Text('SAFE-PWDs'),
         actions: const [
           Padding(
             padding: EdgeInsets.only(right: 16),
@@ -118,7 +119,15 @@ class DashboardHomeContent extends StatelessWidget {
               ),
             ],
           ),
-
+          ElevatedButton(
+            onPressed: () {
+              NotificationService.showHighRiskNotification(
+                title: "Test Alert",
+                body: "This is a test high-risk alert",
+              );
+            },
+            child: const Text("Test Notification"),
+          ),
           const SizedBox(height: 16),
 
           _simpleCard(

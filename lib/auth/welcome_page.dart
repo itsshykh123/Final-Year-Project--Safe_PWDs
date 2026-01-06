@@ -78,14 +78,10 @@ class WelcomeScreen extends StatelessWidget {
                     height: 55,
                     decoration: BoxDecoration(
                       // Translucent dark color for the button
-<<<<<<< Updated upstream
-                      color: const Color(0xFF4A5A50).withValues(),
-=======
-                      color: const Color.fromARGB(0, 2, 6, 82).withOpacity(0.8),
->>>>>>> Stashed changes
+                      color: const Color(0xFF4A5A50).withValues(alpha: 0.8),
                       borderRadius: BorderRadius.circular(30),
                       border: Border.all(
-                        color: Colors.white.withValues(),
+                        color: Colors.white.withValues(alpha: 0.5),
                         width: 1,
                       ),
                     ),
@@ -102,7 +98,7 @@ class WelcomeScreen extends StatelessWidget {
                   ),
                 ),
 
-                const SizedBox(height: 20),
+                const SizedBox(height: 10),
 
                 GestureDetector(
                   onTap: () {
@@ -124,10 +120,10 @@ class WelcomeScreen extends StatelessWidget {
                           2,
                           6,
                           82,
-                        ).withOpacity(0.8),
+                        ).withValues(alpha: 0.8),
                         borderRadius: BorderRadius.circular(30),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withValues(alpha: 0.2),
                           width: 1,
                         ),
                       ),
