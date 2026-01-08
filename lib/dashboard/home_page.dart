@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:safe_pwd/services/notification_service.dart';
 import '../core/constants/app_colors.dart';
 import 'alerts_page.dart';
 import 'settings_page.dart';
 import 'profile_page.dart';
 import 'emergency_page.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -15,6 +17,47 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _currentIndex = 0;
+
+  final FlutterTts _tts = FlutterTts();
+  String userMode = "deaf"; // This should come from your Settings/Profile
+
+  // Helper to trigger accessibility actions
+  void _triggerAccessibilityAlert(String title) async {
+    // 1. BLIND: Speak the alert
+    if (userMode == "blind" || userMode == "both") {
+      await _tts.speak("Emergency Alert: $title");
+    }
+
+    // 2. DEAF: Vibrate and show visual cues
+    if (userMode == "deaf" || userMode == "both") {
+      // Vibration.vibrate(duration: 1000); // Shake for 1 second
+      // HapticFeedback.heavyImpact();
+
+      // Show a high-priority banner at the top
+      ScaffoldMessenger.of(context).showMaterialBanner(
+        MaterialBanner(
+          backgroundColor: Colors.red,
+          content: Text(
+            "ALERT: $title",
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () =>
+                  ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
+              child: const Text(
+                "DISMISS",
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+  }
 
   final List<Widget> _pages = [
     const DashboardHomeContent(),
@@ -38,7 +81,38 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: _pages[_currentIndex],
+      // We wrap the body to listen for alerts globally on the home page
+      body: Stack(
+        children: [
+          _pages[_currentIndex],
+
+          // HIDDEN LISTENER: Listens for the most recent alert
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('alerts')
+                .orderBy('issuedAt', descending: true)
+                .limit(1)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
+                var alert =
+                    snapshot.data!.docs.first.data() as Map<String, dynamic>;
+
+                // Logic to prevent repeating the same alert
+                // (In a real app, you'd check if alert['id'] was already played)
+
+                // Use WidgetsBinding to trigger audio/vibration after build
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _triggerAccessibilityAlert(
+                    alert['title'] ?? "New Hazard Detected",
+                  );
+                });
+              }
+              return const SizedBox.shrink(); // This widget is invisible
+            },
+          ),
+        ],
+      ),
 
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,

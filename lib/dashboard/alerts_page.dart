@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AlertsPage extends StatelessWidget {
   const AlertsPage({super.key});
@@ -12,8 +13,8 @@ class AlertsPage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header
-            Padding(
-              padding: const EdgeInsets.all(16.0),
+            const Padding(
+              padding: EdgeInsets.all(16.0),
               child: Text(
                 'Alerts',
                 style: TextStyle(
@@ -25,129 +26,125 @@ class AlertsPage extends StatelessWidget {
             ),
 
             Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Featured News Cards
-                    SizedBox(
-                      height: 200,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        children: [
-                          _buildFeaturedCard(
-                            'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400',
-                            'Headlines',
-                            'Lorem ipsum dolor sit amet consectetur nulla eget tellus mollis non blandit quis in...',
-                            isBreaking: true,
-                          ),
-                          const SizedBox(width: 12),
-                          _buildFeaturedCard(
-                            'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400',
-                            'Headlines',
-                            'Lorem ipsum dolor sit amet consectetur nulla eget tellus mollis non blandit quis in...',
-                            isBreaking: true,
-                          ),
-                          const SizedBox(width: 12),
-                          _buildFeaturedCard(
-                            'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400',
-                            'Headlines',
-                            'Lorem ipsum dolor sit amet consectetur nulla eget tellus mollis non blandit quis in...',
-                            isBreaking: true,
-                          ),
-                          const SizedBox(width: 12),
-                          _buildFeaturedCard(
-                            'https://images.unsplash.com/photo-1476231790875-69f00dbfe29e?w=400',
-                            'Headlines',
-                            'Nulla eget tellus mollis eget tellus',
-                          ),
-                        ],
-                      ),
-                    ),
+              // Using StreamBuilder to listen to Firestore 'advisories' collection
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('advisories')
+                    .snapshots(), // This listens for real-time changes
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return const Center(child: Text('Something went wrong'));
+                  }
 
-                    const SizedBox(height: 24),
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                    // Recent Alerts Section
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Recent Alerts',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black,
-                            ),
+                  // Convert Firestore documents to a list
+                  final docs = snapshot.data!.docs;
+
+                  if (docs.isEmpty) {
+                    return const Center(child: Text('No recent alerts found.'));
+                  }
+
+                  return SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Horizontal Featured Section (Top 3 latest)
+                        SizedBox(
+                          height: 200,
+                          child: ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: docs.length > 3 ? 3 : docs.length,
+                            itemBuilder: (context, index) {
+                              var data =
+                                  docs[index].data() as Map<String, dynamic>;
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 12),
+                                child: _buildFeaturedCard(
+                                  _getCategoryIcon(
+                                    data['title'],
+                                  ), // Dynamic Image/Icon
+                                  'NDMA Official',
+                                  data['title'] ?? 'No Title',
+                                  isBreaking: true,
+                                ),
+                              );
+                            },
                           ),
-                          TextButton(
-                            onPressed: () {},
-                            child: Text(
-                              'View More >',
-                              style: TextStyle(
-                                color: Colors.orange,
-                                fontSize: 14,
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        // Recent Alerts Header
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Recent Alerts',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
                               ),
-                            ),
+                              TextButton(
+                                onPressed: () {},
+                                child: const Text(
+                                  'View More >',
+                                  style: TextStyle(color: Colors.orange),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
 
-                    const SizedBox(height: 8),
+                        const SizedBox(height: 8),
 
-                    // Recent News List
-                    _buildNewsListItem(
-                      'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=400',
-                      'Alert News',
-                      'Lorem ipsum dolor sit amet consectetur. Mollis ante lorem etiam gravida diam gravi...',
-                      isTopNews: true,
+                        // Vertical List (All items)
+                        ListView.builder(
+                          shrinkWrap:
+                              true, // Allows ListView inside SingleChildScrollView
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: docs.length,
+                          itemBuilder: (context, index) {
+                            var data =
+                                docs[index].data() as Map<String, dynamic>;
+                            return _buildNewsListItem(
+                              _getCategoryIcon(data['title']),
+                              data['date'] ?? 'Recent',
+                              data['title'] ?? 'No Title',
+                              isTopNews: index == 0,
+                            );
+                          },
+                        ),
+                      ],
                     ),
-                    _buildNewsListItem(
-                      'https://images.unsplash.com/photo-1495616811223-4d98c6e9c869?w=400',
-                      'Alert News',
-                      'Lorem ipsum dolor sit amet consectetur. Mollis ante lorem etiam gravida diam gravi...',
-                    ),
-                    _buildNewsListItem(
-                      'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
-                      'Alert News',
-                      'Lorem ipsum dolor sit amet consectetur. Mollis ante lorem etiam gravida diam gravi...',
-                    ),
-                    _buildNewsListItem(
-                      'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400',
-                      'Alert News',
-                      'Lorem ipsum dolor sit amet consectetur. Mollis ante lorem etiam gravida diam gravi...',
-                    ),
-                    _buildNewsListItem(
-                      'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=400',
-                      'Alert News',
-                      'Lorem ipsum dolor sit amet consectetur. Mollis ante lorem etiam gravida diam gravi...',
-                    ),
-                    _buildNewsListItem(
-                      'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
-                      'Alert News',
-                      'Lorem ipsum dolor sit amet consectetur. Mollis ante lorem etiam gravida diam gravi...',
-                    ),
-                    _buildNewsListItem(
-                      'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=400',
-                      'Alert News',
-                      'Lorem ipsum dolor sit amet consectetur. Mollis ante lorem etiam gravida diam gravi...',
-                    ),
-                    _buildNewsListItem(
-                      'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=400',
-                      'Alert News',
-                      'Lorem ipsum dolor sit amet consectetur. Mollis ante lorem etiam gravida diam gravi...',
-                    ),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  // Helper to pick an image based on title keywords
+  String _getCategoryIcon(String title) {
+    title = title.toLowerCase();
+    if (title.contains('rain') || title.contains('monsoon')) {
+      return 'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?q=80&w=500';
+    } else if (title.contains('drought') || title.contains('heat')) {
+      return 'https://images.unsplash.com/photo-1504386106331-3e4e71712b38?w=400';
+    } else if (title.contains('snow')) {
+      return 'https://images.unsplash.com/photo-1478265409131-1f65c88f965c?w=400';
+    }
+    return 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400';
   }
 
   Widget _buildFeaturedCard(
