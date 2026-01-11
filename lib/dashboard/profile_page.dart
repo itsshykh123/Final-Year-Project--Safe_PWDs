@@ -1,9 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:safe_pwd/auth/login_page.dart';
-import 'login_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../auth/login_page.dart';
 
 class ProfilePage extends StatefulWidget {
+  // We keep the parameter as a backup, but we prioritize the Session
   final String userEmail;
 
   const ProfilePage({super.key, required this.userEmail});
@@ -15,58 +16,120 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  // Session Variables
+  String? sessionEmail;
+  String? sessionName;
+
   bool isEditingName = false;
   bool isEditingDisability = false;
 
   final TextEditingController nameController = TextEditingController();
-  String disability = 'Blind';
+  String disability = 'blind'; 
   late String docId;
-
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadUserData();
+    _initializeSessionAndData();
   }
 
-  Future<void> _loadUserData() async {
-    final query = await _firestore
-        .collection('users')
-        .where('email', isEqualTo: widget.userEmail)
-        .get();
-
-    if (query.docs.isNotEmpty) {
-      final userDoc = query.docs.first;
-      docId = userDoc.id;
-      nameController.text = userDoc.get('Name') ?? '';
-      disability = userDoc.get('disability') ?? 'Blind';
-    }
-    setState(() => isLoading = false);
-  }
-
-  Future<void> _updateName() async {
-    await _firestore.collection('users').doc(docId).update({
-      'Name': nameController.text.trim(),
+  /// 1. Get Email from Session, then load Firestore Data
+  Future<void> _initializeSessionAndData() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    setState(() {
+      // Prioritize the email stored in SharedPreferences
+      sessionEmail = prefs.getString('userEmail') ?? widget.userEmail;
+      sessionName = prefs.getString('userName') ?? "User";
     });
-    setState(() => isEditingName = false);
+
+    if (sessionEmail != null && sessionEmail!.isNotEmpty) {
+      await _loadUserDataFromFirestore(sessionEmail!);
+    } else {
+      setState(() => isLoading = false);
+    }
   }
 
+  /// 2. Fetch latest data from Firestore
+  Future<void> _loadUserDataFromFirestore(String email) async {
+    try {
+      final query = await _firestore
+          .collection('users')
+          .where('email', isEqualTo: email)
+          .get();
+
+      if (query.docs.isNotEmpty) {
+        final userDoc = query.docs.first;
+        docId = userDoc.id;
+        
+        setState(() {
+          nameController.text = userDoc.data().containsKey('Name') ? userDoc.get('Name') : 'User';
+          disability = userDoc.data().containsKey('disability') ? userDoc.get('disability') : 'blind';
+        });
+      }
+    } catch (e) {
+      debugPrint("Error loading profile: $e");
+    } finally {
+      setState(() => isLoading = false);
+    }
+  }
+
+  /// 3. Update Name in both Firestore and Session
+  Future<void> _updateName() async {
+    String newName = nameController.text.trim();
+    if (newName.isEmpty) return;
+
+    await _firestore.collection('users').doc(docId).update({
+      'Name': newName,
+    });
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('userName', newName);
+    
+    setState(() {
+      isEditingName = false;
+      sessionName = newName;
+    });
+    
+    _showSuccessSnackBar("Name updated successfully");
+  }
+
+  /// 4. Update Disability in both Firestore and Session
   Future<void> _updateDisability(String newValue) async {
     await _firestore.collection('users').doc(docId).update({
       'disability': newValue,
     });
+    
+    final prefs = await SharedPreferences.getInstance();
+    // This key 'userMode' MUST match what your HomePage uses for TTS/Vibration
+    await prefs.setString('userMode', newValue); 
+    
     setState(() {
       disability = newValue;
       isEditingDisability = false;
     });
+
+    _showSuccessSnackBar("Accessibility mode set to ${newValue.toUpperCase()}");
   }
 
-  void _logout() {
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (route) => false,
+  /// 5. Clear Session and Logout
+  Future<void> _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear(); // Wipe session data
+    
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (route) => false,
+      );
+    }
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: const Color(0xFF2E5A3C)),
     );
   }
 
@@ -83,7 +146,7 @@ class _ProfilePageState extends State<ProfilePage> {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
           child: Column(
             children: [
-              // Modern Profile Header
+              // Header Section
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 40),
@@ -100,98 +163,73 @@ class _ProfilePageState extends State<ProfilePage> {
                     CircleAvatar(
                       radius: 50,
                       backgroundColor: Colors.white.withOpacity(0.3),
-                      child: const Icon(
-                        Icons.person,
-                        size: 50,
-                        color: Colors.white,
-                      ),
+                      child: const Icon(Icons.person, size: 50, color: Colors.white),
                     ),
                     const SizedBox(height: 15),
+                    
+                    // Editable Name Display
                     isEditingName
-                        ? SizedBox(
-                            width: 200,
-                            child: TextField(
-                              controller: nameController,
-                              autofocus: true,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              textAlign: TextAlign.center,
-                              decoration: const InputDecoration(
-                                border: UnderlineInputBorder(
-                                  borderSide: BorderSide(color: Colors.white),
+                        ? Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 150,
+                                child: TextField(
+                                  controller: nameController,
+                                  autofocus: true,
+                                  style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                                  textAlign: TextAlign.center,
+                                  decoration: const InputDecoration(
+                                    enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white)),
+                                  ),
                                 ),
-                                hintText: "Enter Name",
-                                hintStyle: TextStyle(color: Colors.white70),
                               ),
-                            ),
+                              IconButton(
+                                icon: const Icon(Icons.check_circle, color: Colors.white),
+                                onPressed: _updateName,
+                              )
+                            ],
                           )
                         : Row(
-                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Text(
                                 nameController.text,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                               ),
-                              const SizedBox(width: 8),
-                              GestureDetector(
-                                onTap: () =>
-                                    setState(() => isEditingName = true),
-                                child: const Icon(
-                                  Icons.edit,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
+                              IconButton(
+                                icon: const Icon(Icons.edit, color: Colors.white, size: 20),
+                                onPressed: () => setState(() => isEditingName = true),
                               ),
                             ],
                           ),
-                    const SizedBox(height: 5),
-                    Text(
-                      widget.userEmail,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                      ),
-                    ),
+                    Text(sessionEmail ?? "No email", style: const TextStyle(color: Colors.white70, fontSize: 16)),
                   ],
                 ),
               ),
               const SizedBox(height: 30),
 
-              // Profile Info Card
+              // Information Details Card
+              
               Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                elevation: 2,
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     children: [
-                      // Disability
                       _buildEditableDropdown(
-                        title: "Disability",
+                        title: "Accessibility Mode",
                         value: disability,
                         isEditing: isEditingDisability,
-                        options: const ['Blind', 'Deaf', 'Both'],
-                        onEdit: () =>
-                            setState(() => isEditingDisability = true),
+                        options: const ['blind', 'deaf', 'both'],
+                        onEdit: () => setState(() => isEditingDisability = true),
                         onSave: _updateDisability,
                       ),
-
-                      const SizedBox(height: 20),
-
-                      // Email (read-only)
-                      _buildReadOnlyField(
-                        title: "Email",
-                        value: widget.userEmail,
-                      ),
+                      const Divider(height: 30),
+                      _buildReadOnlyField(title: "Account Email", value: sessionEmail ?? "N/A"),
+                      const Divider(height: 30),
+                      _buildReadOnlyField(title: "App Version", value: "1.0.0 (FYP-Build)"),
                     ],
                   ),
                 ),
@@ -202,16 +240,15 @@ class _ProfilePageState extends State<ProfilePage> {
               // Logout Button
               SizedBox(
                 width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
+                height: 55,
+                child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF2E5A3C),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                   ),
                   onPressed: _logout,
-                  child: const Text("Logout", style: TextStyle(fontSize: 16)),
+                  icon: const Icon(Icons.logout, color: Colors.white),
+                  label: const Text("Logout", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
@@ -225,8 +262,8 @@ class _ProfilePageState extends State<ProfilePage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        Text(value, style: TextStyle(color: Colors.grey[700])),
+        Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        Text(value, style: TextStyle(color: Colors.grey[600], fontSize: 15)),
       ],
     );
   }
@@ -242,29 +279,20 @@ class _ProfilePageState extends State<ProfilePage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
         isEditing
             ? DropdownButton<String>(
-                value: value,
-                underline: const SizedBox(),
-                items: options
-                    .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                    .toList(),
-                onChanged: (v) {
-                  if (v != null) onSave(v);
-                },
+                value: options.contains(value) ? value : options.first,
+                items: options.map((e) => DropdownMenuItem(value: e, child: Text(e.toUpperCase()))).toList(),
+                onChanged: (v) { if (v != null) onSave(v); },
               )
             : Row(
                 children: [
-                  Text(value, style: TextStyle(color: Colors.grey[700])),
+                  Text(value.toUpperCase(), style: const TextStyle(color: Color(0xFF2E5A3C), fontWeight: FontWeight.bold)),
                   const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: onEdit,
-                    child: const Icon(
-                      Icons.edit,
-                      color: Color(0xFF2E5A3C),
-                      size: 18,
-                    ),
+                  IconButton(
+                    icon: const Icon(Icons.settings_accessibility, color: Color(0xFF2E5A3C), size: 22),
+                    onPressed: onEdit,
                   ),
                 ],
               ),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore
 import 'package:safe_pwd/dashboard/home_page.dart';
 import 'register_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -26,13 +27,11 @@ class _LoginPageState extends State<LoginPage> {
       final emailInput = emailController.text.trim();
       final passwordInput = passwordController.text.trim();
 
-      // 1. Search the 'users' collection for the matching email
       final querySnapshot = await firestore
           .collection('users')
           .where('email', isEqualTo: emailInput)
           .get();
 
-      // 2. Check if a user with that email exists
       if (querySnapshot.docs.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -42,16 +41,17 @@ class _LoginPageState extends State<LoginPage> {
         return;
       }
 
-      // 3. Get the document data (assuming email is unique)
       final userDoc = querySnapshot.docs.first;
-      final storedPassword = userDoc.get(
-        'password',
-      ); // This pulls from your "password" field
+      final userData = userDoc.data(); // Get the full map
+      final storedPassword = userData['password'];
 
-      // 4. Compare the passwords
       if (storedPassword == passwordInput) {
-        debugPrint("Login successful for: ${userDoc.get('Name')}");
-
+        // --- SESSION STORAGE START ---
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('userName', userData['Name'] ?? 'User');
+        await prefs.setString('userEmail', userData['email'] ?? '');
+        await prefs.setString('userMode', userData['disability'] ?? 'both');
+        // --- SESSION STORAGE END ---
         if (mounted) {
           Navigator.pushReplacement(
             context,

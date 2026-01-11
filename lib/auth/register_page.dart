@@ -50,6 +50,7 @@ class _RegisterPageState extends State<RegisterPage> {
         await firestore.collection('users').add({
           'Name': name,
           'email': email,
+          'disability': "both",
           'password': password, // Storing plain text as requested
           'createdAt': FieldValue.serverTimestamp(),
         });
