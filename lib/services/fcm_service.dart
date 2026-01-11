@@ -14,8 +14,7 @@ class FCMService {
     );
 
     // Get FCM token
-    String? token = await _messaging.getToken();
-    print("FCM Token: $token");
+    // String? token = await _messaging.getToken();
 
     // Foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {

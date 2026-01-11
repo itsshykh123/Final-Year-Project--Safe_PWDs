@@ -10,6 +10,10 @@ import 'alerts_page.dart';
 import 'settings_page.dart';
 import 'profile_page.dart';
 import 'emergency_page.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -32,7 +36,7 @@ class _HomePageState extends State<HomePage> {
     const AlertsPage(),
     const SettingsPage(),
     const ProfilePage(userEmail: ''),
-    const EmergencyPage(),
+    const EmergencyContactPage(),
   ];
 
   DateTime _parseDate(String? dateStr) {
@@ -265,8 +269,65 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class DashboardHomeContent extends StatelessWidget {
+class DashboardHomeContent extends StatefulWidget {
   const DashboardHomeContent({super.key});
+
+  @override
+  State<DashboardHomeContent> createState() => _DashboardHomeContentState();
+}
+
+class _DashboardHomeContentState extends State<DashboardHomeContent> {
+  // Initial placeholder values
+  String _temp = "Loading...";
+  String _weatherStatus = "Fetching...";
+  String _city = "Locating...";
+  String _area = "Detecting...";
+  IconData _weatherIcon = Icons.cloud_queue;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLiveStatus();
+  }
+
+  Future<void> _fetchLiveStatus() async {
+    try {
+      // 1. Get Device Location
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.low,
+      );
+
+      // 2. Get City Name (Reverse Geocoding)
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        position.latitude, position.longitude
+      );
+      Placemark place = placemarks[0];
+
+      // 3. Get Weather (Using Open-Meteo Free API)
+      final weatherUrl = Uri.parse(
+          'https://api.open-meteo.com/v1/forecast?latitude=${position.latitude}&longitude=${position.longitude}&current_weather=true');
+      final response = await http.get(weatherUrl);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final current = data['current_weather'];
+
+        setState(() {
+          _temp = "${current['temperature']}°C";
+          _city = place.locality ?? "Unknown City";
+          _area = "${place.subLocality ?? place.name}";
+          _weatherStatus = _getWeatherDescription(current['weathercode']);
+          _weatherIcon = _getWeatherIcon(current['weathercode']);
+        });
+      }
+    } catch (e) {
+      debugPrint("Dashboard update error: $e");
+      setState(() {
+        _temp = "N/A";
+        _city = "Check Permissions";
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -274,61 +335,23 @@ class DashboardHomeContent extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.success,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: const [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'ALL CLEAR',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      'No Active Threats',
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+          // 1. Status Banner
+          _buildStatusBanner(),
 
           const SizedBox(height: 16),
 
+          // 2. Dynamic Info Cards
           Row(
             children: [
-              _infoCard('Weather', '24°C', 'Partly Cloudy', Icons.cloud),
+              _infoCard('Weather', _temp, _weatherStatus, _weatherIcon),
               const SizedBox(width: 12),
-              _infoCard(
-                'Location',
-                'San Francisco',
-                'CA 94102',
-                Icons.location_on,
-              ),
+              _infoCard('Location', _city, _area, Icons.location_on),
             ],
           ),
-          // ElevatedButton(
-          //   onPressed: () {
-          //     NotificationService.showHighRiskNotification(
-          //       title: "Test Alert",
-          //       body: "This is a test high-risk alert",
-          //     );
-          //   },
-          //   child: const Text("Test Notification"),
-          // ),
+
           const SizedBox(height: 16),
 
+          // 3. Static Hazard Card
           _simpleCard(
             Icons.warning,
             'Nearby Hazards',
@@ -337,57 +360,87 @@ class DashboardHomeContent extends StatelessWidget {
 
           const SizedBox(height: 16),
 
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.lightBlue,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Text(
-              'Preparedness Tip of the Day\n\nKeep an emergency kit with water, non-perishable food, flashlight, and radio.',
-            ),
-          ),
+          // 4. Tip Card
+          _buildTipCard(),
 
           const SizedBox(height: 24),
 
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size(double.infinity, 48),
-              foregroundColor: AppColors.danger,
-              side: const BorderSide(color: AppColors.danger),
-            ),
-            onPressed: () {},
-            icon: const Icon(Icons.volume_up),
-            label: const Text('Activate Hardware Siren'),
+          // 5. Hardware Siren Button
+          _buildSirenButton(),
+        ],
+      ),
+    );
+  }
+
+  // --- Helper UI Components ---
+
+  Widget _buildStatusBanner() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2D6A4F), // Success Green
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.check_circle, color: Colors.white),
+          SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('ALL CLEAR', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              Text('No Active Threats', style: TextStyle(color: Colors.white70)),
+            ],
           ),
         ],
       ),
     );
   }
 
-  static Widget _infoCard(
-    String title,
-    String value,
-    String subtitle,
-    IconData icon,
-  ) {
+  Widget _buildTipCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue.withOpacity(0.3)),
+      ),
+      child: const Text(
+        'Preparedness Tip\n\nKeep an emergency kit with water, food, and a flashlight ready.',
+        style: TextStyle(fontSize: 13),
+      ),
+    );
+  }
+
+  Widget _buildSirenButton() {
+    return OutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(double.infinity, 48),
+        foregroundColor: Colors.red,
+        side: const BorderSide(color: Colors.red),
+      ),
+      onPressed: () { /* Logic for siren hardware */ },
+      icon: const Icon(Icons.volume_up),
+      label: const Text('Activate Hardware Siren'),
+    );
+  }
+
+  static Widget _infoCard(String title, String value, String subtitle, IconData icon) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5)],
         ),
         child: Column(
           children: [
-            Icon(icon, color: AppColors.primary),
+            Icon(icon, color: Colors.red),
             const SizedBox(height: 8),
             Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(value),
-            Text(
-              subtitle,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            ),
+            Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: Colors.grey)),
           ],
         ),
       ),
@@ -409,14 +462,25 @@ class DashboardHomeContent extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text(
-                subtitle,
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
-              ),
+              Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 12)),
             ],
           ),
         ],
       ),
     );
+  }
+
+  // Helper mapping for Weather API codes
+  String _getWeatherDescription(int code) {
+    if (code == 0) return "Clear Sky";
+    if (code < 40) return "Partly Cloudy";
+    if (code < 70) return "Rainy";
+    return "Stormy";
+  }
+
+  IconData _getWeatherIcon(int code) {
+    if (code == 0) return Icons.wb_sunny;
+    if (code < 40) return Icons.cloud_outlined;
+    return Icons.umbrella;
   }
 }

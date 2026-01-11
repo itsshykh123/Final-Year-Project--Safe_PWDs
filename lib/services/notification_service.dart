@@ -68,7 +68,7 @@ class NotificationService {
     await _notificationsPlugin.show(0, title, body, notificationDetails);
 
     // Vibrate device (Android only)
-    if (await Vibration.hasVibrator() ?? false) {
+    if (await Vibration.hasVibrator()) {
       Vibration.vibrate(pattern: [0, 1000, 500, 1000]);
     }
   }
