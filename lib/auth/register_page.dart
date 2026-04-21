@@ -53,6 +53,7 @@ class _RegisterPageState extends State<RegisterPage> {
           'disability': "both",
           'password': password, // Storing plain text as requested
           'createdAt': FieldValue.serverTimestamp(),
+          'isAdmin': false
         });
 
         if (!mounted) return;

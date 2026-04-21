@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 // import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore
-import 'package:safe_pwd/dashboard/home_page.dart';
+import 'package:safe_pwd/routes/app_routes.dart';
 import 'register_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -44,6 +44,7 @@ class _LoginPageState extends State<LoginPage> {
       final userDoc = querySnapshot.docs.first;
       final userData = userDoc.data(); // Get the full map
       final storedPassword = userData['password'];
+      final isAdmin = userData['isAdmin'] == true;
 
       if (storedPassword == passwordInput) {
         // --- SESSION STORAGE START ---
@@ -51,13 +52,12 @@ class _LoginPageState extends State<LoginPage> {
         await prefs.setString('userName', userData['Name'] ?? 'User');
         await prefs.setString('userEmail', userData['email'] ?? '');
         await prefs.setString('userMode', userData['disability'] ?? 'both');
+        await prefs.setBool('isAdmin', isAdmin);
         // --- SESSION STORAGE END ---
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const HomePage()),
-          );
-        }
+        Navigator.pushReplacementNamed(
+          context,
+          isAdmin ? AppRoutes.adminDashboard : AppRoutes.home,
+        );
       } else {
         if (mounted) {
           ScaffoldMessenger.of(

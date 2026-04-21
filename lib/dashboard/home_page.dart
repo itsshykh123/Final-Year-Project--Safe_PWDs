@@ -5,15 +5,19 @@ import 'package:vibration/vibration.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safe_pwd/services/notification_service.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:async';
+import 'package:async/async.dart' show StreamGroup;
+
+// Page Imports
 import '../core/constants/app_colors.dart';
 import 'alerts_page.dart';
 import 'settings_page.dart';
 import 'profile_page.dart';
 import 'emergency_page.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -24,42 +28,21 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _currentIndex = 0;
-
   String userName = "Loading...";
-  String _userMode = "both"; // Default
-  String? _lastAlertId; // Prevents duplicate triggers
+  String userEmail = "";
+  String _userMode = "both";
+  String? _lastAlertId;
 
   final FlutterTts _tts = FlutterTts();
 
-  final List<Widget> _pages = [
+  // Navigation Logic
+  List<Widget> get _pages => [
     const DashboardHomeContent(),
     const AlertsPage(),
     const SettingsPage(),
-    const ProfilePage(userEmail: ''),
+    ProfilePage(userEmail: userEmail),
     const EmergencyContactPage(),
   ];
-
-  DateTime _parseDate(String? dateStr) {
-    if (dateStr == null || dateStr.isEmpty) return DateTime(2000);
-    try {
-      // Splits "31-10-2025" into [31, 10, 2025]
-      List<String> parts = dateStr.split('-');
-      int day = int.parse(parts[0]);
-      int month = int.parse(parts[1]);
-      int year = int.parse(parts[2]);
-      return DateTime(year, month, day);
-    } catch (e) {
-      return DateTime(2000); // Fallback for bad data
-    }
-  }
-
-  Future<void> _loadUserPreferences() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _userMode = prefs.getString('userMode') ?? "both";
-      userName = prefs.getString('userName') ?? "User";
-    });
-  }
 
   @override
   void initState() {
@@ -67,95 +50,175 @@ class _HomePageState extends State<HomePage> {
     _loadUserPreferences();
   }
 
-  // Accessibility Alert Trigger
+  Future<void> _loadUserPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _userMode = prefs.getString('userMode') ?? "both";
+      userName = prefs.getString('userName') ?? "User";
+      userEmail = prefs.getString('userEmail') ?? "";
+    });
+  }
+
+  DateTime _parseDate(String? dateStr) {
+    if (dateStr == null || dateStr.isEmpty) return DateTime(2000);
+    try {
+      List<String> parts = dateStr.split('-');
+      return DateTime(
+        int.parse(parts[2]),
+        int.parse(parts[1]),
+        int.parse(parts[0]),
+      );
+    } catch (e) {
+      return DateTime(2000);
+    }
+  }
+
+  // ✅ Visual Helper for Deaf/Full-Screen
+  Widget _getAlertVisual(String title, {double size = 150}) {
+    final t = title.toLowerCase();
+    String imagePath = 'assets/images/warning.png'; // Default fallback
+
+    if (t.contains('fire')) {
+      imagePath = 'assets/images/fire.png';
+    } else if (t.contains('flood') || t.contains('rain')) {
+      imagePath = 'assets/images/flood.png';
+    } else if (t.contains('storm') || t.contains('cyclone')) {
+      imagePath = 'assets/images/storm.png';
+    } else if (t.contains('earthquake')) {
+      imagePath = 'assets/images/earthquake.png';
+    } else if (t.contains('medical')) {
+      imagePath = 'assets/images/medical.png';
+    }
+
+    return Image.asset(
+      imagePath,
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      // Error builder ensures app doesn't crash if image is missing
+      errorBuilder: (context, error, stackTrace) =>
+          Icon(Icons.warning, color: Colors.white, size: size),
+    );
+  }
+
+  // ✅ FULL SCREEN ALERT TRIGGER
   void _triggerAccessibilityAlert(String title) async {
-    // Persistent Visual Banner
-    ScaffoldMessenger.of(context).showMaterialBanner(
-      MaterialBanner(
-        backgroundColor: Colors.redAccent,
-        leading: const Icon(
-          Icons.warning_amber_rounded,
-          color: Colors.white,
-          size: 40,
-        ),
-        content: Text(
-          "EMERGENCY: $title",
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () =>
-                ScaffoldMessenger.of(context).hideCurrentMaterialBanner(),
-            child: const Text(
-              "DISMISS",
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
+    // 1. Notification
+    NotificationService.showHighRiskNotification(
+      title: "⚠️ EMERGENCY",
+      body: title,
+    );
+
+    // 2. TTS
+    if (_userMode == "blind" || _userMode == "both") {
+      await _tts.speak(
+        "Emergency Alert: $title. Look at the screen for details.",
+      );
+    }
+
+    // 3. Vibration
+    if (_userMode == "deaf" || _userMode == "both") {
+      if (await Vibration.hasVibrator()) {
+        Vibration.vibrate(pattern: [0, 1000, 500, 1000]);
+      }
+    }
+
+    // 4. Full Screen Image Overlay
+    if (!mounted) return;
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: false,
+      pageBuilder: (context, anim1, anim2) {
+        return WillPopScope(
+          onWillPop: () async => false,
+          child: Scaffold(
+            backgroundColor: const Color(0xFFB71C1C),
+            body: Center(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _getAlertVisual(title, size: 220), // Show large picture
+                    const SizedBox(height: 40),
+                    Text(
+                      title.toUpperCase(),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 60),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 40),
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          minimumSize: const Size(double.infinity, 70),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                        onPressed: () {
+                          Vibration.cancel();
+                          Navigator.of(context).pop();
+                        },
+                        child: const Text(
+                          "DISMISS / I AM SAFE",
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
+  }
 
-    // 1. BLIND MODE: Voice Feedback
-    if (_userMode == "blind" || _userMode == "both") {
-      await _tts.setLanguage("en-US");
-      await _tts.speak("Emergency Alert: $title");
-    }
-
-    // 2. DEAF MODE: Haptic & Visual Feedback
-    if (_userMode == "deaf" || _userMode == "both") {
-      // Vibrate for 1.5 seconds in a specific pattern
-      if (await Vibration.hasVibrator()) {
-        Vibration.vibrate(pattern: [0, 500, 200, 500, 200, 500]);
-      }
-      HapticFeedback.heavyImpact();
-    }
+  Future<List<QueryDocumentSnapshot>> _fetchCombinedAlerts() async {
+    final advisories = await FirebaseFirestore.instance
+        .collection('advisories')
+        .get();
+    final alerts = await FirebaseFirestore.instance
+        .collection('alerts')
+        .where('isActive', isEqualTo: true)
+        .get();
+    return [...advisories.docs, ...alerts.docs];
   }
 
   @override
   Widget build(BuildContext context) {
-    // Determine which icon to show in the header based on the session userMode
-    IconData modeIcon;
-    Color modeColor = Colors.white;
-
-    if (_userMode == 'blind') {
-      modeIcon = Icons.record_voice_over;
-    } else if (_userMode == 'deaf') {
-      modeIcon = Icons.vibration;
-    } else if (_userMode == 'both') {
-      modeIcon = Icons.all_inclusive;
-    } else {
-      modeIcon = Icons.accessibility_new;
-    }
+    IconData modeIcon = _userMode == 'blind'
+        ? Icons.record_voice_over
+        : _userMode == 'deaf'
+        ? Icons.vibration
+        : Icons.all_inclusive;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        // 1. REMOVE BACK BUTTON
         automaticallyImplyLeading: false,
-
-        // 2. MODERN HEADER STYLING
         backgroundColor: const Color.fromARGB(255, 220, 33, 33),
         elevation: 4,
         title: Row(
           children: [
-            // User Avatar Circle
             CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.white.withOpacity(0.2),
+              backgroundColor: Colors.white24,
               child: Text(
-                userName.isNotEmpty ? userName[0].toUpperCase() : "U",
-                style: const TextStyle(color: Colors.white, fontSize: 14),
+                userName.isNotEmpty ? userName[0] : "U",
+                style: const TextStyle(color: Colors.white),
               ),
             ),
             const SizedBox(width: 12),
-            // Name and Welcome text
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -176,68 +239,50 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
         actions: [
-          // 3. MODE ICON DISPLAY IN APPBAR
           Padding(
-            padding: const EdgeInsets.only(right: 16.0),
-            child: Tooltip(
-              message: "Active Mode: ${_userMode.toUpperCase()}",
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(modeIcon, color: modeColor, size: 20),
-              ),
-            ),
+            padding: const EdgeInsets.only(right: 16),
+            child: Icon(modeIcon, color: Colors.white),
           ),
         ],
       ),
       body: Stack(
         children: [
-          // Ensure pages are loaded using the getter to pass latest session data
           _pages[_currentIndex],
-
-          // BACKGROUND FIRESTORE LISTENER
           StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('advisories')
-                .snapshots(),
+            stream: StreamGroup.merge([
+              FirebaseFirestore.instance.collection('advisories').snapshots(),
+              FirebaseFirestore.instance
+                  .collection('alerts')
+                  .where('isActive', isEqualTo: true)
+                  .snapshots(),
+            ]),
             builder: (context, snapshot) {
-              if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
-                List<QueryDocumentSnapshot> sortedDocs = snapshot.data!.docs
-                    .toList();
-
-                // Sort locally to ensure "31-10-2025" logic works correctly
-                sortedDocs.sort((a, b) {
-                  Map<String, dynamic> dataA = a.data() as Map<String, dynamic>;
-                  Map<String, dynamic> dataB = b.data() as Map<String, dynamic>;
-                  return _parseDate(
-                    dataB['date'],
-                  ).compareTo(_parseDate(dataA['date']));
-                });
-
-                var latestDoc = sortedDocs.first;
-                var alert = latestDoc.data() as Map<String, dynamic>;
-                String currentId = latestDoc.id;
-
-                if (_lastAlertId != currentId) {
-                  _lastAlertId = currentId;
-
-                  // Trigger System-wide Alert
-                  NotificationService.showHighRiskNotification(
-                    title: "EMERGENCY ALERT",
-                    body: alert['title'] ?? "New Hazard Detected",
-                  );
-
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _triggerAccessibilityAlert(
-                      alert['title'] ?? "Hazard Detected",
-                    );
+              return FutureBuilder<List<QueryDocumentSnapshot>>(
+                future: _fetchCombinedAlerts(),
+                builder: (context, futureSnapshot) {
+                  if (!futureSnapshot.hasData || futureSnapshot.data!.isEmpty)
+                    return const SizedBox.shrink();
+                  final allDocs = futureSnapshot.data!;
+                  allDocs.sort((a, b) {
+                    var dA = a.data() as Map<String, dynamic>;
+                    var dB = b.data() as Map<String, dynamic>;
+                    DateTime tA = dA['createdAt'] is Timestamp
+                        ? (dA['createdAt'] as Timestamp).toDate()
+                        : _parseDate(dA['date']);
+                    DateTime tB = dB['createdAt'] is Timestamp
+                        ? (dB['createdAt'] as Timestamp).toDate()
+                        : _parseDate(dB['date']);
+                    return tB.compareTo(tA);
                   });
-                }
-              }
-              return const SizedBox.shrink();
+                  if (_lastAlertId != allDocs.first.id) {
+                    _lastAlertId = allDocs.first.id;
+                    WidgetsBinding.instance.addPostFrameCallback(
+                      (_) => _triggerAccessibilityAlert(allDocs.first['title']),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              );
             },
           ),
         ],
@@ -269,15 +314,14 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
+// ✅ RE-INTEGRATED DASHBOARD CONTENT (Weather, Location, Hardware Siren)
 class DashboardHomeContent extends StatefulWidget {
   const DashboardHomeContent({super.key});
-
   @override
   State<DashboardHomeContent> createState() => _DashboardHomeContentState();
 }
 
 class _DashboardHomeContentState extends State<DashboardHomeContent> {
-  // Initial placeholder values
   String _temp = "Loading...";
   String _weatherStatus = "Fetching...";
   String _city = "Locating...";
@@ -292,39 +336,36 @@ class _DashboardHomeContentState extends State<DashboardHomeContent> {
 
   Future<void> _fetchLiveStatus() async {
     try {
-      // 1. Get Device Location
-      Position position = await Geolocator.getCurrentPosition(
+      Position pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.low,
       );
-
-      // 2. Get City Name (Reverse Geocoding)
-      List<Placemark> placemarks = await placemarkFromCoordinates(
-        position.latitude, position.longitude
+      List<Placemark> marks = await placemarkFromCoordinates(
+        pos.latitude,
+        pos.longitude,
       );
-      Placemark place = placemarks[0];
+      Placemark p = marks[0];
 
-      // 3. Get Weather (Using Open-Meteo Free API)
-      final weatherUrl = Uri.parse(
-          'https://api.open-meteo.com/v1/forecast?latitude=${position.latitude}&longitude=${position.longitude}&current_weather=true');
-      final response = await http.get(weatherUrl);
+      final url = Uri.parse(
+        'https://api.open-meteo.com/v1/forecast?latitude=${pos.latitude}&longitude=${pos.longitude}&current_weather=true',
+      );
+      final res = await http.get(url);
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final current = data['current_weather'];
-
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body)['current_weather'];
         setState(() {
-          _temp = "${current['temperature']}°C";
-          _city = place.locality ?? "Unknown City";
-          _area = "${place.subLocality ?? place.name}";
-          _weatherStatus = _getWeatherDescription(current['weathercode']);
-          _weatherIcon = _getWeatherIcon(current['weathercode']);
+          _temp = "${data['temperature']}°C";
+          _city = p.locality ?? "Unknown";
+          _area = p.subLocality ?? p.name ?? "";
+          _weatherStatus = data['weathercode'] == 0 ? "Clear Sky" : "Overcast";
+          _weatherIcon = data['weathercode'] == 0
+              ? Icons.wb_sunny
+              : Icons.cloud;
         });
       }
     } catch (e) {
-      debugPrint("Dashboard update error: $e");
       setState(() {
         _temp = "N/A";
-        _city = "Check Permissions";
+        _city = "Error";
       });
     }
   }
@@ -335,152 +376,124 @@ class _DashboardHomeContentState extends State<DashboardHomeContent> {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          // 1. Status Banner
           _buildStatusBanner(),
-
           const SizedBox(height: 16),
-
-          // 2. Dynamic Info Cards
           Row(
             children: [
-              _infoCard('Weather', _temp, _weatherStatus, _weatherIcon),
+              _card('Weather', _temp, _weatherStatus, _weatherIcon),
               const SizedBox(width: 12),
-              _infoCard('Location', _city, _area, Icons.location_on),
+              _card('Location', _city, _area, Icons.location_on),
             ],
           ),
-
           const SizedBox(height: 16),
-
-          // 3. Static Hazard Card
           _simpleCard(
             Icons.warning,
             'Nearby Hazards',
             'No active hazards in your area',
           ),
-
           const SizedBox(height: 16),
-
-          // 4. Tip Card
-          _buildTipCard(),
-
+          _tipCard(),
           const SizedBox(height: 24),
-
-          // 5. Hardware Siren Button
-          _buildSirenButton(),
+          _sirenBtn(),
         ],
       ),
     );
   }
 
-  // --- Helper UI Components ---
-
-  Widget _buildStatusBanner() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2D6A4F), // Success Green
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: const Row(
-        children: [
-          Icon(Icons.check_circle, color: Colors.white),
-          SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('ALL CLEAR', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              Text('No Active Threats', style: TextStyle(color: Colors.white70)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTipCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.withOpacity(0.3)),
-      ),
-      child: const Text(
-        'Preparedness Tip\n\nKeep an emergency kit with water, food, and a flashlight ready.',
-        style: TextStyle(fontSize: 13),
-      ),
-    );
-  }
-
-  Widget _buildSirenButton() {
-    return OutlinedButton.icon(
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size(double.infinity, 48),
-        foregroundColor: Colors.red,
-        side: const BorderSide(color: Colors.red),
-      ),
-      onPressed: () { /* Logic for siren hardware */ },
-      icon: const Icon(Icons.volume_up),
-      label: const Text('Activate Hardware Siren'),
-    );
-  }
-
-  static Widget _infoCard(String title, String value, String subtitle, IconData icon) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5)],
-        ),
-        child: Column(
+  Widget _buildStatusBanner() => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: const Color(0xFF2D6A4F),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: const Row(
+      children: [
+        Icon(Icons.check_circle, color: Colors.white),
+        SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: Colors.red),
-            const SizedBox(height: 8),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-            Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            Text(
+              'ALL CLEAR',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            Text('No Active Threats', style: TextStyle(color: Colors.white70)),
           ],
         ),
-      ),
-    );
-  }
-
-  static Widget _simpleCard(IconData icon, String title, String subtitle) {
-    return Container(
+      ],
+    ),
+  );
+  Widget _card(String t, String v, String s, IconData i) => Expanded(
+    child: Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5),
+        ],
       ),
-      child: Row(
+      child: Column(
         children: [
-          Icon(icon, color: Colors.green),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-            ],
+          Icon(i, color: Colors.red),
+          const SizedBox(height: 8),
+          Text(t, style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(
+            v,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+          ),
+          Text(
+            s,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
           ),
         ],
       ),
-    );
-  }
-
-  // Helper mapping for Weather API codes
-  String _getWeatherDescription(int code) {
-    if (code == 0) return "Clear Sky";
-    if (code < 40) return "Partly Cloudy";
-    if (code < 70) return "Rainy";
-    return "Stormy";
-  }
-
-  IconData _getWeatherIcon(int code) {
-    if (code == 0) return Icons.wb_sunny;
-    if (code < 40) return Icons.cloud_outlined;
-    return Icons.umbrella;
-  }
+    ),
+  );
+  Widget _simpleCard(IconData i, String t, String s) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      children: [
+        Icon(i, color: Colors.green),
+        const SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(t, style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(s, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          ],
+        ),
+      ],
+    ),
+  );
+  Widget _tipCard() => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.blue.withOpacity(0.1),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.blue.withOpacity(0.3)),
+    ),
+    child: const Text(
+      'Preparedness Tip\n\nEnsure your emergency kit is easily accessible.',
+      style: TextStyle(fontSize: 13),
+    ),
+  );
+  Widget _sirenBtn() => OutlinedButton.icon(
+    style: OutlinedButton.styleFrom(
+      minimumSize: const Size(double.infinity, 50),
+      foregroundColor: Colors.red,
+      side: const BorderSide(color: Colors.red),
+    ),
+    onPressed: () {},
+    icon: const Icon(Icons.volume_up),
+    label: const Text('Activate Hardware Siren'),
+  );
 }
