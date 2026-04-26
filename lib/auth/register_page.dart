@@ -9,6 +9,7 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   // 1. Controllers to get text from fields
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -18,6 +19,8 @@ class _RegisterPageState extends State<RegisterPage> {
 
   // 2. The Register Function
   void _registerUser() async {
+    if (!_formKey.currentState!.validate()) return;
+
     final String name = _nameController.text.trim();
     final String email = _emailController.text.trim();
     final String password = _passwordController.text.trim();
@@ -53,7 +56,7 @@ class _RegisterPageState extends State<RegisterPage> {
           'disability': "both",
           'password': password, // Storing plain text as requested
           'createdAt': FieldValue.serverTimestamp(),
-          'isAdmin': false
+          'isAdmin': false,
         });
 
         if (!mounted) return;
@@ -97,105 +100,115 @@ class _RegisterPageState extends State<RegisterPage> {
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(30),
-        child: Column(
-          children: [
-            Align(
-              alignment: Alignment.topRight,
-              child: Image.network(
-                "https://cdn-icons-png.flaticon.com/512/2917/2917242.png",
-                height: 50,
-                color: const Color(0xFF2E5A3C),
-              ),
-            ),
-            const Text(
-              "Register",
-              style: TextStyle(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF2E5A3C),
-              ),
-            ),
-            const Text(
-              "Create your new account",
-              style: TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 40),
-
-            // 3. Pass controllers to text fields
-            _buildTextField("Full Name", Icons.person_outline, _nameController),
-            _buildTextField(
-              "user@mail.com",
-              Icons.email_outlined,
-              _emailController,
-            ),
-            _buildTextField(
-              "Password",
-              Icons.lock_outline,
-              _passwordController,
-              isPassword: true,
-            ),
-
-            const SizedBox(height: 30),
-
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2E5A3C),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.topRight,
+                child: Image.network(
+                  "https://cdn-icons-png.flaticon.com/512/2917/2917242.png",
+                  height: 50,
+                  color: const Color(0xFF2E5A3C),
                 ),
-                onPressed: _isLoading
-                    ? null
-                    : _registerUser, // Disable while loading
-                child: _isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
-                        "Register",
-                        style: TextStyle(color: Colors.white, fontSize: 18),
-                      ),
               ),
-            ),
-
-            const SizedBox(height: 20),
-            const Text(
-              "Or continue with",
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _socialBtn(Icons.facebook, Colors.blue),
-                const SizedBox(width: 20),
-                _socialBtn(Icons.g_mobiledata, Colors.red),
-                const SizedBox(width: 20),
-                _socialBtn(Icons.apple, Colors.black),
-              ],
-            ),
-            const SizedBox(height: 30),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Text(
-                  "Already have an account? ",
-                  style: TextStyle(color: Colors.grey),
+              const Text(
+                "Register",
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2E5A3C),
                 ),
-                GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: const Text(
-                    "Sign in",
-                    style: TextStyle(
-                      color: Color(0xFF2E5A3C),
-                      fontWeight: FontWeight.bold,
+              ),
+              const Text(
+                "Create your new account",
+                style: TextStyle(color: Colors.grey),
+              ),
+              const SizedBox(height: 40),
+
+              // 3. Pass controllers to text fields
+              _buildTextField(
+                "Full Name",
+                Icons.person_outline,
+                _nameController,
+                fieldType: 'name',
+              ),
+              _buildTextField(
+                "user@mail.com",
+                Icons.email_outlined,
+                _emailController,
+                fieldType: 'email',
+              ),
+              _buildTextField(
+                "Password",
+                Icons.lock_outline,
+                _passwordController,
+                isPassword: true,
+                fieldType: 'password',
+              ),
+
+              const SizedBox(height: 30),
+
+              SizedBox(
+                width: double.infinity,
+                height: 55,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2E5A3C),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
                     ),
                   ),
+                  onPressed: _isLoading
+                      ? null
+                      : _registerUser, // Disable while loading
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : const Text(
+                          "Register",
+                          style: TextStyle(color: Colors.white, fontSize: 18),
+                        ),
                 ),
-              ],
-            ),
-          ],
+              ),
+
+              const SizedBox(height: 20),
+              const Text(
+                "Or continue with",
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _socialBtn(Icons.facebook, Colors.blue),
+                  const SizedBox(width: 20),
+                  _socialBtn(Icons.g_mobiledata, Colors.red),
+                  const SizedBox(width: 20),
+                  _socialBtn(Icons.apple, Colors.black),
+                ],
+              ),
+              const SizedBox(height: 30),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    "Already have an account? ",
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: const Text(
+                      "Sign in",
+                      style: TextStyle(
+                        color: Color(0xFF2E5A3C),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -207,6 +220,7 @@ class _RegisterPageState extends State<RegisterPage> {
     IconData icon,
     TextEditingController controller, {
     bool isPassword = false,
+    required String fieldType,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 15),
@@ -214,9 +228,32 @@ class _RegisterPageState extends State<RegisterPage> {
         color: const Color(0xFFF0F5F1),
         borderRadius: BorderRadius.circular(15),
       ),
-      child: TextField(
+      child: TextFormField(
         controller: controller, // Link the controller
         obscureText: isPassword,
+        validator: (value) {
+          // Rule 1: All fields must not be empty
+          if (value == null || value.isEmpty) {
+            return "$hint is required";
+          }
+
+          // Rule 2: Email validation (only if fieldType is email)
+          if (fieldType == 'email' && !value.contains("@")) {
+            return "Enter a valid email";
+          }
+
+          // Rule 3: Password length (only if fieldType is password)
+          if (fieldType == 'password' && value.length < 6) {
+            return "Password must be at least 6 characters";
+          }
+
+          // Rule 4: Name check (optional: ensures at least two words)
+          if (fieldType == 'name' && value.trim().split(' ').isEmpty) {
+            return "Please enter your name";
+          }
+
+          return null;
+        },
         decoration: InputDecoration(
           prefixIcon: Icon(icon, color: const Color(0xFF2E5A3C)),
           hintText: hint,

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:vibration/vibration.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,7 +9,6 @@ import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
-import 'package:async/async.dart' show StreamGroup;
 
 // Page Imports
 import '../core/constants/app_colors.dart';
@@ -34,6 +32,7 @@ class _HomePageState extends State<HomePage> {
   String? _lastAlertId;
 
   final FlutterTts _tts = FlutterTts();
+  StreamSubscription? _alertSubscription;
 
   // Navigation Logic
   List<Widget> get _pages => [
@@ -47,7 +46,19 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _loadUserPreferences();
+    _initialSetup();
+  }
+
+  @override
+  void dispose() {
+    _alertSubscription?.cancel();
+    _tts.stop();
+    super.dispose();
+  }
+
+  Future<void> _initialSetup() async {
+    await _loadUserPreferences();
+    _startAlertListener();
   }
 
   Future<void> _loadUserPreferences() async {
@@ -59,140 +70,179 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  DateTime _parseDate(String? dateStr) {
-    if (dateStr == null || dateStr.isEmpty) return DateTime(2000);
+  // ✅ BACKGROUND LISTENER: Uses email to check seen status
+  void _startAlertListener() {
+    _alertSubscription = FirebaseFirestore.instance
+        .collection('alerts')
+        .where('isActive', isEqualTo: true)
+        .snapshots()
+        .listen((snapshot) async {
+          if (snapshot.docs.isEmpty || userEmail.isEmpty) return;
+
+          List<QueryDocumentSnapshot> docs = snapshot.docs.toList();
+          docs.sort((a, b) {
+            var dA = a.data() as Map<String, dynamic>;
+            var dB = b.data() as Map<String, dynamic>;
+            DateTime tA = dA['createdAt'] != null
+                ? (dA['createdAt'] as Timestamp).toDate()
+                : DateTime(2000);
+            DateTime tB = dB['createdAt'] != null
+                ? (dB['createdAt'] as Timestamp).toDate()
+                : DateTime(2000);
+            return tB.compareTo(tA);
+          });
+
+          final latestAlert = docs.first;
+          final String alertId = latestAlert.id;
+          final Map<String, dynamic> data =
+              latestAlert.data() as Map<String, dynamic>;
+
+          final prefs = await SharedPreferences.getInstance();
+          bool localSeen = prefs.getBool("${userEmail}_seen_$alertId") ?? false;
+          List seenByList = data['seenBy'] ?? [];
+          bool cloudSeen = seenByList.contains(userEmail);
+
+          // ✅ TRIGGER LOGIC
+          if (_lastAlertId != alertId && !localSeen && !cloudSeen) {
+            _lastAlertId = alertId;
+
+            // 1. AUTOMATIC DATABASE UPDATE (Happens instantly when shown)
+            await _markAsSeenInDB(alertId);
+
+            // 2. SHOW UI
+            _triggerAccessibilityAlert(data['title'], alertId);
+          }
+        });
+  }
+
+  Future<void> _markAsSeenInDB(String alertId) async {
+    if (userEmail.isEmpty) return;
+
     try {
-      List<String> parts = dateStr.split('-');
-      return DateTime(
-        int.parse(parts[2]),
-        int.parse(parts[1]),
-        int.parse(parts[0]),
+      // 1. Update Firestore immediately
+      await FirebaseFirestore.instance.collection('alerts').doc(alertId).update(
+        {
+          'seenBy': FieldValue.arrayUnion([userEmail]),
+        },
       );
+
+      // 2. Update Local Prefs so it doesn't trigger again in this session
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool("${userEmail}_seen_$alertId", true);
+
+      debugPrint("Alert $alertId automatically marked as seen for $userEmail");
     } catch (e) {
-      return DateTime(2000);
+      debugPrint("Auto-save to DB failed: $e");
     }
   }
 
-  // ✅ Visual Helper for Deaf/Full-Screen
+  // ✅ VISUAL HELPER
   Widget _getAlertVisual(String title, {double size = 150}) {
     final t = title.toLowerCase();
-    String imagePath = 'assets/images/warning.png'; // Default fallback
-
-    if (t.contains('fire')) {
+    String imagePath = 'assets/images/warning.png';
+    if (t.contains('fire'))
       imagePath = 'assets/images/fire.png';
-    } else if (t.contains('flood') || t.contains('rain')) {
+    else if (t.contains('flood') || t.contains('rain'))
       imagePath = 'assets/images/flood.png';
-    } else if (t.contains('storm') || t.contains('cyclone')) {
+    else if (t.contains('storm') || t.contains('cyclone'))
       imagePath = 'assets/images/storm.png';
-    } else if (t.contains('earthquake')) {
+    else if (t.contains('earthquake'))
       imagePath = 'assets/images/earthquake.png';
-    } else if (t.contains('medical')) {
+    else if (t.contains('medical'))
       imagePath = 'assets/images/medical.png';
-    }
 
     return Image.asset(
       imagePath,
       width: size,
       height: size,
       fit: BoxFit.contain,
-      // Error builder ensures app doesn't crash if image is missing
       errorBuilder: (context, error, stackTrace) =>
           Icon(Icons.warning, color: Colors.white, size: size),
     );
   }
 
-  // ✅ FULL SCREEN ALERT TRIGGER
-  void _triggerAccessibilityAlert(String title) async {
-    // 1. Notification
+  // ✅ ACCESSIBILITY ALERT TRIGGER
+  void _triggerAccessibilityAlert(String title, String alertId) async {
     NotificationService.showHighRiskNotification(
       title: "⚠️ EMERGENCY",
       body: title,
     );
 
-    // 2. TTS
     if (_userMode == "blind" || _userMode == "both") {
       await _tts.speak(
         "Emergency Alert: $title. Look at the screen for details.",
       );
     }
 
-    // 3. Vibration
     if (_userMode == "deaf" || _userMode == "both") {
       if (await Vibration.hasVibrator()) {
         Vibration.vibrate(pattern: [0, 1000, 500, 1000]);
       }
     }
 
-    // 4. Full Screen Image Overlay
-    if (!mounted) return;
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: false,
-      pageBuilder: (context, anim1, anim2) {
-        return WillPopScope(
-          onWillPop: () async => false,
-          child: Scaffold(
-            backgroundColor: const Color(0xFFB71C1C),
-            body: Center(
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _getAlertVisual(title, size: 220), // Show large picture
-                    const SizedBox(height: 40),
-                    Text(
-                      title.toUpperCase(),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 60),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 40),
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          minimumSize: const Size(double.infinity, 70),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
-                        onPressed: () {
-                          Vibration.cancel();
-                          Navigator.of(context).pop();
-                        },
-                        child: const Text(
-                          "DISMISS / I AM SAFE",
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+    if (_userMode == "deaf" || _userMode == "both") {
+      if (!mounted) return;
+      showGeneralDialog(
+        context: context,
+        barrierDismissible: false,
+        pageBuilder: (context, anim1, anim2) {
+          return WillPopScope(
+            onWillPop: () async => false,
+            child: Scaffold(
+              backgroundColor: const Color(0xFFB71C1C),
+              body: Center(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _getAlertVisual(title, size: 220),
+                      const SizedBox(height: 40),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Text(
+                          title.toUpperCase(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 26,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 60),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 40),
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            minimumSize: const Size(double.infinity, 70),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                          ),
+                          onPressed: () {
+                            Vibration.cancel();
+                            Navigator.of(context).pop();
+                          },
+                          child: const Text(
+                            "DISMISS / I AM SAFE",
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<List<QueryDocumentSnapshot>> _fetchCombinedAlerts() async {
-    final advisories = await FirebaseFirestore.instance
-        .collection('advisories')
-        .get();
-    final alerts = await FirebaseFirestore.instance
-        .collection('alerts')
-        .where('isActive', isEqualTo: true)
-        .get();
-    return [...advisories.docs, ...alerts.docs];
+          );
+        },
+      );
+    }
   }
 
   @override
@@ -208,7 +258,6 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         automaticallyImplyLeading: false,
         backgroundColor: const Color.fromARGB(255, 220, 33, 33),
-        elevation: 4,
         title: Row(
           children: [
             CircleAvatar(
@@ -245,48 +294,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          _pages[_currentIndex],
-          StreamBuilder<QuerySnapshot>(
-            stream: StreamGroup.merge([
-              FirebaseFirestore.instance.collection('advisories').snapshots(),
-              FirebaseFirestore.instance
-                  .collection('alerts')
-                  .where('isActive', isEqualTo: true)
-                  .snapshots(),
-            ]),
-            builder: (context, snapshot) {
-              return FutureBuilder<List<QueryDocumentSnapshot>>(
-                future: _fetchCombinedAlerts(),
-                builder: (context, futureSnapshot) {
-                  if (!futureSnapshot.hasData || futureSnapshot.data!.isEmpty)
-                    return const SizedBox.shrink();
-                  final allDocs = futureSnapshot.data!;
-                  allDocs.sort((a, b) {
-                    var dA = a.data() as Map<String, dynamic>;
-                    var dB = b.data() as Map<String, dynamic>;
-                    DateTime tA = dA['createdAt'] is Timestamp
-                        ? (dA['createdAt'] as Timestamp).toDate()
-                        : _parseDate(dA['date']);
-                    DateTime tB = dB['createdAt'] is Timestamp
-                        ? (dB['createdAt'] as Timestamp).toDate()
-                        : _parseDate(dB['date']);
-                    return tB.compareTo(tA);
-                  });
-                  if (_lastAlertId != allDocs.first.id) {
-                    _lastAlertId = allDocs.first.id;
-                    WidgetsBinding.instance.addPostFrameCallback(
-                      (_) => _triggerAccessibilityAlert(allDocs.first['title']),
-                    );
-                  }
-                  return const SizedBox.shrink();
-                },
-              );
-            },
-          ),
-        ],
-      ),
+      body: _pages[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         selectedItemColor: AppColors.primary,
@@ -335,10 +343,41 @@ class _DashboardHomeContentState extends State<DashboardHomeContent> {
   }
 
   Future<void> _fetchLiveStatus() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
     try {
+      // 1. Check if location services are enabled
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        // Location services are not enabled, ask user to enable it
+        setState(() => _city = "Enable GPS");
+        await Geolocator.openLocationSettings();
+        return;
+      }
+
+      // 2. Check permissions
+      permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          setState(() => _city = "Permission Denied");
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        // Permissions are denied forever, handle appropriately.
+        setState(() => _city = "Settings Required");
+        await Geolocator.openAppSettings();
+        return;
+      }
+
+      // 3. If we reached here, permissions are granted and GPS is on
       Position pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.low,
       );
+
       List<Placemark> marks = await placemarkFromCoordinates(
         pos.latitude,
         pos.longitude,
@@ -363,9 +402,10 @@ class _DashboardHomeContentState extends State<DashboardHomeContent> {
         });
       }
     } catch (e) {
+      debugPrint("Location Error: $e");
       setState(() {
         _temp = "N/A";
-        _city = "Error";
+        _city = "Retry Location";
       });
     }
   }

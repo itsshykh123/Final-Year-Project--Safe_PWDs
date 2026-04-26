@@ -201,7 +201,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               tileColor: Colors.red.withOpacity(0.05),
               leading: const Icon(Icons.logout_rounded, color: Colors.red),
               title: const Text(
-                "Sign Out",
+                "Logout",
                 style: TextStyle(
                   color: Colors.red,
                   fontWeight: FontWeight.w600,

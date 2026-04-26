@@ -4,126 +4,122 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class AlertsPage extends StatelessWidget {
   const AlertsPage({super.key});
 
+  // ✅ Custom Parser for your "DD-MM-YYYY" String format
+  DateTime _getDateTime(Map<String, dynamic> data) {
+    if (data['createdAt'] != null && data['createdAt'] is Timestamp) {
+      return (data['createdAt'] as Timestamp).toDate();
+    }
+
+    // Parse your "03-11-2025" String
+    try {
+      if (data['date'] != null && data['date'] is String) {
+        List<String> parts = data['date'].split('-');
+        // DateTime expects (Year, Month, Day)
+        return DateTime(
+          int.parse(parts[2]),
+          int.parse(parts[1]),
+          int.parse(parts[0]),
+        );
+      }
+    } catch (e) {
+      debugPrint("Date parsing error: $e");
+    }
+    return DateTime(2000); // Fallback for sorting
+  }
+
   @override
   Widget build(BuildContext context) {
+    final advisoriesStream = FirebaseFirestore.instance
+        .collection('advisories')
+        .snapshots();
+    final alertsStream = FirebaseFirestore.instance
+        .collection('alerts')
+        .snapshots();
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Text(
-                'Alerts',
-                style: TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black,
-                ),
-              ),
-            ),
+            const Padding(padding: EdgeInsets.all(16.0)),
 
             Expanded(
-              // Using StreamBuilder to listen to Firestore 'advisories' collection
               child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('advisories')
-                    .snapshots(), // This listens for real-time changes
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return const Center(child: Text('Something went wrong'));
-                  }
+                stream: advisoriesStream,
+                builder: (context, advSnap) {
+                  return StreamBuilder<QuerySnapshot>(
+                    stream: alertsStream,
+                    builder: (context, alertSnap) {
+                      if (advSnap.hasError || alertSnap.hasError)
+                        return const Center(child: Text('Error loading data'));
+                      if (!advSnap.hasData || !alertSnap.hasData)
+                        return const Center(child: CircularProgressIndicator());
 
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+                      // Combine docs from both collections
+                      List<DocumentSnapshot> allDocs = [
+                        ...advSnap.data!.docs,
+                        ...alertSnap.data!.docs,
+                      ];
 
-                  // Convert Firestore documents to a list
-                  final docs = snapshot.data!.docs;
+                      // ✅ Sort Descending (Newest first)
+                      allDocs.sort((a, b) {
+                        DateTime dateA = _getDateTime(
+                          a.data() as Map<String, dynamic>,
+                        );
+                        DateTime dateB = _getDateTime(
+                          b.data() as Map<String, dynamic>,
+                        );
+                        return dateB.compareTo(dateA);
+                      });
 
-                  if (docs.isEmpty) {
-                    return const Center(child: Text('No recent alerts found.'));
-                  }
+                      if (allDocs.isEmpty)
+                        return const Center(
+                          child: Text('No active advisories or alerts.'),
+                        );
 
-                  return SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Horizontal Featured Section (Top 3 latest)
-                        SizedBox(
-                          height: 200,
-                          child: ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            itemCount: docs.length > 3 ? 3 : docs.length,
-                            itemBuilder: (context, index) {
-                              var data =
-                                  docs[index].data() as Map<String, dynamic>;
-                              return Padding(
-                                padding: const EdgeInsets.only(right: 12),
-                                child: _buildFeaturedCard(
-                                  _getCategoryIcon(
-                                    data['title'],
-                                  ), // Dynamic Image/Icon
-                                  'NDMA Official',
-                                  data['title'] ?? 'No Title',
-                                  isBreaking: true,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
+                      return ListView.builder(
+                        padding: const EdgeInsets.only(bottom: 20),
+                        itemCount: allDocs.length,
+                        itemBuilder: (context, index) {
+                          final data =
+                              allDocs[index].data() as Map<String, dynamic>;
+                          final bool isAlertTable =
+                              allDocs[index].reference.parent.id == 'alerts';
 
-                        const SizedBox(height: 24),
+                          // 1. Set source: Admin for alerts, database source for advisories
+                          final String sourceName = isAlertTable
+                              ? "Admin"
+                              : (data['source'] ?? 'NDMA Pakistan');
+                          String displayDate = 'Recent';
 
-                        // Recent Alerts Header
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Recent Alerts',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black,
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: () {},
-                                child: const Text(
-                                  'View More >',
-                                  style: TextStyle(color: Colors.orange),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                          if (isAlertTable) {
+                            // If it's an alert (Timestamp), convert it to a readable date
+                            if (data['createdAt'] != null &&
+                                data['createdAt'] is Timestamp) {
+                              DateTime dt = (data['createdAt'] as Timestamp)
+                                  .toDate();
+                              displayDate =
+                                  "${dt.day.toString().padLeft(2, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.year}";
+                            }
+                          } else {
+                            // If it's an advisory, use your existing "date" string
+                            displayDate = data['date'] ?? 'Recent';
+                          }
 
-                        const SizedBox(height: 8),
+                          // 4. Combine into subtitle
+                          final String subtitle =
+                              "Source: $sourceName • $displayDate";
 
-                        // Vertical List (All items)
-                        ListView.builder(
-                          shrinkWrap:
-                              true, // Allows ListView inside SingleChildScrollView
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: docs.length,
-                          itemBuilder: (context, index) {
-                            var data =
-                                docs[index].data() as Map<String, dynamic>;
-                            return _buildNewsListItem(
-                              _getCategoryIcon(data['title']),
-                              data['date'] ?? 'Recent',
-                              data['title'] ?? 'No Title',
-                              isTopNews: index == 0,
-                            );
-                          },
-                        ),
-                      ],
-                    ),
+                          return _buildAlertTile(
+                            imageUrl: _getCategoryIcon(data['title'] ?? ''),
+                            title: data['title'] ?? 'Safety Update',
+                            subtitle: subtitle,
+                            isCritical: false, // ✅ Always false as requested
+                          );
+                        },
+                      );
+                    },
                   );
                 },
               ),
@@ -134,159 +130,110 @@ class AlertsPage extends StatelessWidget {
     );
   }
 
-  // Helper to pick an image based on title keywords
+  // ✅ Image logic matching your title keywords
   String _getCategoryIcon(String title) {
-    title = title.toLowerCase();
-    if (title.contains('rain') || title.contains('monsoon')) {
-      return 'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?q=80&w=500';
-    } else if (title.contains('drought') || title.contains('heat')) {
-      return 'https://images.unsplash.com/photo-1504386106331-3e4e71712b38?w=400';
-    } else if (title.contains('snow')) {
-      return 'https://images.unsplash.com/photo-1478265409131-1f65c88f965c?w=400';
+    final t = title.toLowerCase();
+
+    if (t.contains('rain') ||
+        t.contains('thunderstorm') ||
+        t.contains('monsoon')) {
+      return 'assets/images/flood.png';
+    } else if (t.contains('snow')) {
+      return 'assets/images/snow.png';
+    } else if (t.contains('heat') || t.contains('sun')) {
+      return 'assets/images/heat.png';
+    } else if (t.contains('fire')) {
+      return 'assets/images/fire.png';
+    } else if (t.contains('earthquake')) {
+      return 'assets/images/earthquake.png';
+    } else if (t.contains('medical')) {
+      return 'assets/images/medical.png';
     }
-    return 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400';
+
+    return 'assets/images/warning.png'; // Default fallback image
   }
 
-  Widget _buildFeaturedCard(
-    String imageUrl,
-    String title,
-    String subtitle, {
-    bool isBreaking = false,
-  }) {
-    return Container(
-      width: 280,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        image: DecorationImage(
-          image: NetworkImage(imageUrl),
-          fit: BoxFit.cover,
-        ),
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)],
-          ),
-        ),
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            if (isBreaking)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'Breaking',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.9),
-                fontSize: 13,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNewsListItem(
-    String imageUrl,
-    String title,
-    String subtitle, {
-    bool isTopNews = false,
+  Widget _buildAlertTile({
+    required String imageUrl,
+    required String title,
+    required String subtitle,
+    required bool isCritical,
   }) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          Stack(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  imageUrl,
-                  width: 80,
-                  height: 80,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              if (isTopNews)
-                Positioned(
-                  top: 4,
-                  left: 4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      'Top News',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isCritical ? Colors.red.withValues(alpha: 0.05) : Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: isCritical
+              ? Colors.red.withValues(alpha: 0.3)
+              : Colors.grey.shade200,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
-          const SizedBox(width: 12),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.asset(
+              imageUrl,
+              width: 85,
+              height: 85,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(
+                width: 85,
+                height: 85,
+                color: Colors.grey[300],
+                child: const Icon(Icons.image_not_supported),
+              ),
+            ),
+          ),
+          const SizedBox(width: 15),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (isCritical)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      "⚠️ CRITICAL ALERT",
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
                 Text(
                   title,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                     color: Colors.black,
+                    height: 1.2,
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 Text(
                   subtitle,
                   style: TextStyle(fontSize: 13, color: Colors.grey[600]),
-                  maxLines: 2,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          Icon(Icons.chevron_right, color: Colors.grey[400]),
         ],
       ),
     );
