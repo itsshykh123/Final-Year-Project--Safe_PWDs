@@ -19,10 +19,12 @@ jobs:
 
       - name: Install Dependencies
         run: |
+          cd ndma
           pip install -r requirements.txt
 
       - name: Run Scraper
         env:
           # This pulls the JSON from your GitHub Repository Secrets
           FIREBASE_CONFIG: ${{ secrets.FIREBASE_CONFIG }}
+        working-directory: ./ndma
         run: python cron_scraper.py
