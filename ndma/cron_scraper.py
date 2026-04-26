@@ -20,10 +20,17 @@ def setup_firebase():
         print("🏠 Running locally with JSON file...")
         cred = credentials.Certificate("fyp-pwd-firebase-adminsdk-fbsvc-d1c1a020cb.json")
     else:
-        # Running on GitHub Actions
-        print("☁️ Running on GitHub with Secrets...")
-        fb_config_dict = json.loads(fb_config_str)
-        cred = credentials.Certificate(fb_config_dict)
+            # Running on GitHub Actions
+            print("☁️ Running on GitHub with Secrets...")
+            try:
+                fb_config_dict = json.loads(fb_config_str)
+                print(f"🔑 Keys found for project: {fb_config_dict.get('project_id')}")
+                cred = credentials.Certificate(fb_config_dict)
+            except Exception as e:
+                print(f"❌ JSON Parsing Error: {e}")
+                # This will show you if the secret is cut off or malformed
+                print(f"First 20 chars of secret: {fb_config_str[:20]}") 
+                raise
     
     if not firebase_admin._apps:
         firebase_admin.initialize_app(cred)
