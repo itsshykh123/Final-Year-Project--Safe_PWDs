@@ -1,3 +1,4 @@
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:vibration/vibration.dart';
@@ -9,6 +10,8 @@ import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
+import 'package:rxdart/rxdart.dart';
+import 'package:intl/intl.dart';
 
 // Page Imports
 import '../core/constants/app_colors.dart';
@@ -18,7 +21,8 @@ import 'profile_page.dart';
 import 'emergency_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final bool startWithAlert; // Passed from main.dart if initialMessage != null
+  const HomePage({super.key, this.startWithAlert = false});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -29,7 +33,7 @@ class _HomePageState extends State<HomePage> {
   String userName = "Loading...";
   String userEmail = "";
   String _userMode = "both";
-  String? _lastAlertId;
+  // String? _lastAlertId;
 
   final FlutterTts _tts = FlutterTts();
   StreamSubscription? _alertSubscription;
@@ -47,6 +51,18 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _initialSetup();
+
+    FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      _triggerAccessibilityAlert(
+        message.data['body'] ?? "Emergency Alert",
+        "fcm_open",
+      );
+    });
+
+    // If we were woken up by a notification, trigger immediate feedback
+    if (widget.startWithAlert) {
+      _triggerAccessibilityAlert("Emergency Alert Received", "system_init");
+    }
   }
 
   @override
@@ -70,69 +86,122 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  // ✅ BACKGROUND LISTENER: Uses email to check seen status
   void _startAlertListener() {
-    _alertSubscription = FirebaseFirestore.instance
+    final now = DateTime.now();
+
+    // Format for the 'advisories' table (e.g., "26-04-2026")
+    final String todayStr = DateFormat('dd-MM-yyyy').format(now);
+
+    // Start of today for 'alerts' (Timestamp comparison)
+    final DateTime startOfToday = DateTime(now.year, now.month, now.day);
+
+    // 1. Stream for 'alerts' collection (Filters by Timestamp)
+    Stream<List<Map<String, dynamic>>> alertsStream = FirebaseFirestore.instance
         .collection('alerts')
         .where('isActive', isEqualTo: true)
+        .where('severity', whereIn: ['Critical', 'High'])
+        .where(
+          'createdAt',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(startOfToday),
+        )
         .snapshots()
-        .listen((snapshot) async {
-          if (snapshot.docs.isEmpty || userEmail.isEmpty) return;
+        .map(
+          (snap) => snap.docs.map((doc) {
+            final data = doc.data();
+            return {
+              ...data,
+              'id': doc.id,
+              'source_table': 'alerts',
+              'displayDate': (data['createdAt'] as Timestamp).toDate(),
+            };
+          }).toList(),
+        );
 
-          List<QueryDocumentSnapshot> docs = snapshot.docs.toList();
-          docs.sort((a, b) {
-            var dA = a.data() as Map<String, dynamic>;
-            var dB = b.data() as Map<String, dynamic>;
-            DateTime tA = dA['createdAt'] != null
-                ? (dA['createdAt'] as Timestamp).toDate()
-                : DateTime(2000);
-            DateTime tB = dB['createdAt'] != null
-                ? (dB['createdAt'] as Timestamp).toDate()
-                : DateTime(2000);
-            return tB.compareTo(tA);
-          });
+    // 2. Stream for 'advisories' collection (Filters by Date String)
+    Stream<List<Map<String, dynamic>>> advisoriesStream = FirebaseFirestore
+        .instance
+        .collection('advisories')
+        .where('date', isEqualTo: todayStr)
+        .snapshots()
+        .map(
+          (snap) => snap.docs.map((doc) {
+            final data = doc.data();
+            return {
+              ...data,
+              'id': doc.id,
+              'source_table': 'advisories',
+              // Parse string date back to DateTime for sorting
+              'displayDate': DateFormat('dd-MM-yyyy').parse(data['date']),
+            };
+          }).toList(),
+        );
 
-          final latestAlert = docs.first;
-          final String alertId = latestAlert.id;
-          final Map<String, dynamic> data =
-              latestAlert.data() as Map<String, dynamic>;
+    // 3. Combine both streams into one
+    _alertSubscription =
+        Rx.combineLatest2(
+          alertsStream,
+          advisoriesStream,
+          (a, b) => [...a, ...b],
+        ).listen((combinedList) async {
+          if (combinedList.isEmpty) return;
 
           final prefs = await SharedPreferences.getInstance();
-          bool localSeen = prefs.getBool("${userEmail}_seen_$alertId") ?? false;
-          List seenByList = data['seenBy'] ?? [];
-          bool cloudSeen = seenByList.contains(userEmail);
+          final String? userEmail = prefs.getString(
+            'userEmail',
+          ); // Get email from prefs since no Auth
+          if (userEmail == null) return;
 
-          // ✅ TRIGGER LOGIC
-          if (_lastAlertId != alertId && !localSeen && !cloudSeen) {
-            _lastAlertId = alertId;
+          for (var alert in combinedList) {
+            final String alertId = alert['id'];
 
-            // 1. AUTOMATIC DATABASE UPDATE (Happens instantly when shown)
-            await _markAsSeenInDB(alertId);
+            // Check if this specific user has already acknowledged this alert
+            bool localSeen =
+                prefs.getBool("${userEmail}_seen_$alertId") ?? false;
+            List seenByList = alert['seenBy'] ?? [];
+            bool cloudSeen = seenByList.contains(userEmail);
 
-            // 2. SHOW UI
-            _triggerAccessibilityAlert(data['title'], alertId);
+            if (!localSeen && !cloudSeen) {
+              // THIS IS THE TRIGGER
+              _triggerAccessibilityAlert(alert['title'], alertId);
+
+              // Auto-mark as seen so it doesn't pop up again every time the stream updates
+              await _markAsSeenInDB(alertId, alert['source_table']);
+            }
           }
         });
   }
 
-  Future<void> _markAsSeenInDB(String alertId) async {
+  Future<void> _markAsSeenInDB(String alertId, String collectionName) async {
     if (userEmail.isEmpty) return;
 
     try {
-      // 1. Update Firestore immediately
-      await FirebaseFirestore.instance.collection('alerts').doc(alertId).update(
-        {
-          'seenBy': FieldValue.arrayUnion([userEmail]),
-        },
-      );
+      // 1. Update the specific collection (alerts or advisories)
+      await FirebaseFirestore.instance
+          .collection(collectionName)
+          .doc(alertId)
+          .update({
+            'seenBy': FieldValue.arrayUnion([userEmail]),
+          });
 
-      // 2. Update Local Prefs so it doesn't trigger again in this session
+      // 2. Update Local Prefs (SharedPref key stays unique to the alertId)
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool("${userEmail}_seen_$alertId", true);
 
-      debugPrint("Alert $alertId automatically marked as seen for $userEmail");
+      debugPrint(
+        "Item $alertId in $collectionName marked as seen for $userEmail",
+      );
     } catch (e) {
-      debugPrint("Auto-save to DB failed: $e");
+      // If a table (like advisories) doesn't have the 'seenBy' field yet,
+      // Firestore might throw an error. You can use set with merge:true to be safe.
+      debugPrint("Auto-save to DB failed for $collectionName: $e");
+
+      // Alternative: Use set with merge if you want to create the field if it's missing
+      /*
+    await FirebaseFirestore.instance.collection(collectionName).doc(alertId).set(
+      {'seenBy': FieldValue.arrayUnion([userEmail])}, 
+      SetOptions(merge: true)
+    );
+    */
     }
   }
 
@@ -169,18 +238,25 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (_userMode == "blind" || _userMode == "both") {
-      await _tts.speak(
-        "Emergency Alert: $title. Look at the screen for details.",
-      );
+      await _tts.setLanguage("en-US");
+      await _tts.setSpeechRate(0.5);
+      await _tts.speak("Emergency Alert: $title. Please check the dashboard.");
     }
 
+    // 3. Vibration Logic
     if (_userMode == "deaf" || _userMode == "both") {
+      if (await Vibration.hasVibrator()) {
+        Vibration.vibrate(pattern: [0, 1000, 500, 1000, 500, 1000]);
+      }
+    }
+
+    if (_userMode == "both") {
       if (await Vibration.hasVibrator()) {
         Vibration.vibrate(pattern: [0, 1000, 500, 1000]);
       }
     }
 
-    if (_userMode == "deaf" || _userMode == "both") {
+    if (_userMode == "deaf") {
       if (!mounted) return;
       showGeneralDialog(
         context: context,

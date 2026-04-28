@@ -5,25 +5,25 @@ class FCMService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
 
   static Future<void> initFCM() async {
-    // Request permissions (iOS)
-    await _messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-      provisional: false,
-    );
+    // Request permissions for Android 13+ and iOS
+    await _messaging.requestPermission(alert: true, badge: true, sound: true);
 
-    // Get FCM token
-    // String? token = await _messaging.getToken();
+    // Subscribe to a topic. All users will receive alerts sent to this topic.
+    await FirebaseMessaging.instance.subscribeToTopic("disaster_alerts");
 
-    // Foreground messages
+    // Listen for foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      NotificationService.showFCMNotification(message);
+      NotificationService.showHighRiskNotification(
+        title: message.data['title'],
+        body: message.data['body'],
+      );
     });
 
-    // App opened via notification
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      // Optional: navigate to specific screen
+    FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      NotificationService.showHighRiskNotification(
+        title: message.data['title'],
+        body: message.data['body'],
+      );
     });
   }
 }

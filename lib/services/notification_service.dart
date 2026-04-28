@@ -49,38 +49,49 @@ class NotificationService {
   }
 
   static Future<void> showHighRiskNotification({
-    required String title,
-    required String body,
+    RemoteMessage? message,
+    String? title,
+    String? body,
   }) async {
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: 'Notifications for high-risk alerts',
-      importance: Importance.max,
-      priority: Priority.high,
-      playSound: true,
-      enableVibration: true,
-      vibrationPattern: Int64List.fromList([0, 1000, 500, 1000]),
-    );
+    // 1. Determine the content (Prioritize manual strings, then FCM, then defaults)
+    String displayTitle =
+        title ?? message?.notification?.title ?? "⚠️ EMERGENCY";
+    String displayBody =
+        body ?? message?.notification?.body ?? "High Risk Alert Detected";
 
-    final notificationDetails = NotificationDetails(android: androidDetails);
-
-    await _notificationsPlugin.show(0, title, body, notificationDetails);
-
-    // Vibrate device (Android only)
+    // 2. Vibrate
     if (await Vibration.hasVibrator()) {
       Vibration.vibrate(pattern: [0, 1000, 500, 1000]);
     }
+
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+          'high_risk_alerts',
+          'High Risk Alerts',
+          channelDescription: 'Used for emergency risk alerts',
+          importance: Importance.max,
+          priority: Priority.high,
+          fullScreenIntent: true,
+          icon: '@mipmap/ic_launcher',
+        );
+
+    // 3. Show it
+    await _notificationsPlugin.show(
+      // Use message hash or a timestamp for manual alerts
+      message?.hashCode ?? DateTime.now().millisecondsSinceEpoch % 100000,
+      displayTitle,
+      displayBody,
+      const NotificationDetails(android: androidDetails),
+    );
   }
 
   // For FCM messages
   static Future<void> showFCMNotification(RemoteMessage message) async {
-    final notification = message.notification;
+    RemoteNotification? notification = message.notification;
+
     if (notification != null) {
-      await showHighRiskNotification(
-        title: notification.title ?? "High-Risk Alert",
-        body: notification.body ?? "",
-      );
+      // Add 'message:' before the variable
+      await showHighRiskNotification(message: message);
     }
   }
 }
