@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-// import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:safe_pwd/routes/app_routes.dart';
 import 'register_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,9 +17,12 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController passwordController = TextEditingController();
 
   bool rememberMe = false;
+  bool _isLoading = false; // Added loading state
 
   void _login() async {
     if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
 
     try {
       final firestore = FirebaseFirestore.instance;
@@ -42,35 +44,38 @@ class _LoginPageState extends State<LoginPage> {
       }
 
       final userDoc = querySnapshot.docs.first;
-      final userData = userDoc.data(); // Get the full map
+      final userData = userDoc.data();
       final storedPassword = userData['password'];
       final isAdmin = userData['isAdmin'] == true;
 
       if (storedPassword == passwordInput) {
-        // --- SESSION STORAGE START ---
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('userName', userData['Name'] ?? 'User');
         await prefs.setString('userEmail', userData['email'] ?? '');
         await prefs.setString('userMode', userData['disability'] ?? 'both');
         await prefs.setBool('isAdmin', isAdmin);
-        // --- SESSION STORAGE END ---
-        Navigator.pushReplacementNamed(
-          context,
-          isAdmin ? AppRoutes.adminDashboard : AppRoutes.home,
-        );
+
+        if (mounted) {
+          Navigator.pushReplacementNamed(
+            context,
+            isAdmin ? AppRoutes.adminDashboard : AppRoutes.home,
+          );
+        }
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text("Incorrect password")));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Incorrect password")),
+          );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e")),
+        );
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -78,167 +83,125 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // TOP IMAGE SECTION
-            Stack(
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Color(0xFF2E5A3C)),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ClipPath(
-                  clipper: WaveClipper(),
-                  child: Container(
-                    height: 350,
-                    width: double.infinity,
-                    decoration: const BoxDecoration(
-                      image: DecorationImage(
-                        image: NetworkImage(
-                          "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?q=80&w=1000&auto=format&fit=crop",
-                        ),
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    child: Container(
-                      color: const Color(0xFF2E5A3C).withValues(alpha: 0.5),
-                    ),
+                const Text(
+                  "Welcome Back",
+                  style: TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2E5A3C),
                   ),
                 ),
-                Positioned(
-                  top: 50,
-                  left: 20,
-                  child: CircleAvatar(
-                    backgroundColor: Colors.white.withValues(alpha: 0.3),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back_ios_new,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                      onPressed: () => Navigator.pop(context),
+                const SizedBox(height: 8),
+                Text(
+                  "Sign in to continue to your account",
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+                ),
+                const SizedBox(height: 40),
+                _buildTextField(
+                  "Email",
+                  Icons.email_outlined,
+                  false,
+                  emailController,
+                ),
+                const SizedBox(height: 20),
+                _buildTextField(
+                  "Password",
+                  Icons.lock_outline,
+                  true,
+                  passwordController,
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: Checkbox(
+                            value: rememberMe,
+                            activeColor: const Color(0xFF2E5A3C),
+                            onChanged: (v) => setState(() => rememberMe = v!),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text("Remember Me", style: TextStyle(color: Colors.grey)),
+                      ],
                     ),
+                    TextButton(
+                      onPressed: () {}, // Add your logic
+                      child: const Text(
+                        "Forgot Password?",
+                        style: TextStyle(color: Color(0xFF2E5A3C), fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 30),
+                SizedBox(
+                  width: double.infinity,
+                  height: 55,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2E5A3C),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    onPressed: _isLoading ? null : _login,
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 24,
+                            width: 24,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text("Login", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
                   ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text("Don't have an account? "),
+                    GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const RegisterPage()),
+                      ),
+                      child: const Text(
+                        "Sign up",
+                        style: TextStyle(
+                          color: Color(0xFF2E5A3C),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-
-            // FORM SECTION
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 30),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    const Text(
-                      "Welcome Back",
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF2E5A3C),
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    const Text(
-                      "Login to your account",
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                    const SizedBox(height: 30),
-
-                    _buildTextField(
-                      "Email",
-                      Icons.email_outlined,
-                      false,
-                      emailController,
-                    ),
-                    _buildTextField(
-                      "Password",
-                      Icons.lock_outline,
-                      true,
-                      passwordController,
-                    ),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Checkbox(
-                              value: rememberMe,
-                              activeColor: const Color(0xFF2E5A3C),
-                              onChanged: (v) {
-                                setState(() => rememberMe = v!);
-                              },
-                            ),
-                            const Text(
-                              "Remember Me",
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const Text(
-                          "Forgot Password?",
-                          style: TextStyle(
-                            color: Color(0xFF2E5A3C),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    SizedBox(
-                      width: double.infinity,
-                      height: 55,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2E5A3C),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                        ),
-                        onPressed: _login,
-                        child: const Text(
-                          "Login",
-                          style: TextStyle(color: Colors.white, fontSize: 18),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text(
-                          "Don't have an account? ",
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                        GestureDetector(
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const RegisterPage(),
-                            ),
-                          ),
-                          child: const Text(
-                            "Sign up",
-                            style: TextStyle(
-                              color: Color(0xFF2E5A3C),
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -250,71 +213,34 @@ class _LoginPageState extends State<LoginPage> {
     bool isPassword,
     TextEditingController controller,
   ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 15),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F5F1),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: TextFormField(
-        controller: controller,
-        obscureText: isPassword,
-        validator: (value) {
-          if (value == null || value.isEmpty) {
-            return "$hint is required";
-          }
-          if (!isPassword && !value.contains("@")) {
-            return "Enter a valid email";
-          }
-          if (isPassword && value.length < 6) {
-            return "Password must be at least 6 characters";
-          }
-          return null;
-        },
-        decoration: InputDecoration(
-          prefixIcon: Icon(icon, color: const Color(0xFF2E5A3C)),
-          hintText: hint,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 15),
+    return TextFormField(
+      controller: controller,
+      obscureText: isPassword,
+      validator: (value) {
+        if (value == null || value.isEmpty) return "$hint is required";
+        if (!isPassword && !value.contains("@")) return "Enter a valid email";
+        if (isPassword && value.length < 6) return "Password must be at least 6 characters";
+        return null;
+      },
+      decoration: InputDecoration(
+        labelText: hint,
+        prefixIcon: Icon(icon, color: const Color(0xFF2E5A3C)),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Colors.grey.shade300),
         ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Colors.grey.shade300),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFF2E5A3C), width: 2),
+        ),
+        filled: true,
+        fillColor: Colors.grey.shade50,
+        contentPadding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
       ),
     );
   }
-}
-
-// WAVY HEADER
-class WaveClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) {
-    final path = Path();
-    path.lineTo(0, size.height - 80);
-
-    final firstControlPoint = Offset(size.width / 4, size.height);
-    final firstEndPoint = Offset(size.width / 2.25, size.height - 50);
-    path.quadraticBezierTo(
-      firstControlPoint.dx,
-      firstControlPoint.dy,
-      firstEndPoint.dx,
-      firstEndPoint.dy,
-    );
-
-    final secondControlPoint = Offset(
-      size.width - (size.width / 3.25),
-      size.height - 100,
-    );
-    final secondEndPoint = Offset(size.width, size.height - 40);
-    path.quadraticBezierTo(
-      secondControlPoint.dx,
-      secondControlPoint.dy,
-      secondEndPoint.dx,
-      secondEndPoint.dy,
-    );
-
-    path.lineTo(size.width, 0);
-    path.close();
-    return path;
-  }
-
-  @override
-  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }
