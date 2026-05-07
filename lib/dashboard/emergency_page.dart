@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -24,34 +25,27 @@ class _EmergencyContactPageState extends State<EmergencyContactPage> {
     _fetchGuardianFromFirebase();
   }
 
+  // --- Logic remains intact ---
   Future<void> _fetchGuardianFromFirebase() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final String? userEmail = prefs.getString('userEmail');
-
       if (userEmail != null) {
         QuerySnapshot querySnapshot = await FirebaseFirestore.instance
-            .collection('users')
-            .where('email', isEqualTo: userEmail)
-            .limit(1)
-            .get();
-
+            .collection('users').where('email', isEqualTo: userEmail).limit(1).get();
         if (querySnapshot.docs.isNotEmpty) {
           var userData = querySnapshot.docs.first.data() as Map<String, dynamic>;
-
           if (userData.containsKey('guardian')) {
             Map<String, dynamic> guardianData = userData['guardian'];
             setState(() {
               _nameController.text = guardianData['name'] ?? "";
               _phoneController.text = guardianData['phone'] ?? "";
             });
-            await prefs.setString('guardianName', _nameController.text);
-            await prefs.setString('guardianPhone', _phoneController.text);
           }
         }
       }
     } catch (e) {
-      debugPrint("Error fetching: $e");
+      debugPrint("Error: $e");
     } finally {
       setState(() => _isSyncing = false);
     }
@@ -59,7 +53,7 @@ class _EmergencyContactPageState extends State<EmergencyContactPage> {
 
   Future<void> _handleSave() async {
     if (_nameController.text.isEmpty || _phoneController.text.isEmpty) {
-      _showSnackBar("Missing Guardian Info", Colors.orange);
+      _showSnackBar("Please fill in both fields", Colors.orange.shade700);
       return;
     }
     setState(() => _isSyncing = true);
@@ -67,12 +61,7 @@ class _EmergencyContactPageState extends State<EmergencyContactPage> {
       final prefs = await SharedPreferences.getInstance();
       final String? userEmail = prefs.getString('userEmail');
       if (userEmail == null) return;
-
-      QuerySnapshot snapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .where('email', isEqualTo: userEmail)
-          .get();
-
+      QuerySnapshot snapshot = await FirebaseFirestore.instance.collection('users').where('email', isEqualTo: userEmail).get();
       if (snapshot.docs.isNotEmpty) {
         await FirebaseFirestore.instance.collection('users').doc(snapshot.docs.first.id).update({
           'guardian': {
@@ -81,20 +70,19 @@ class _EmergencyContactPageState extends State<EmergencyContactPage> {
             'lastUpdated': FieldValue.serverTimestamp(),
           },
         });
-        await prefs.setString('guardianName', _nameController.text);
-        await prefs.setString('guardianPhone', _phoneController.text);
-        _showSnackBar("Guardian Saved Securely", Colors.green);
+        _showSnackBar("Guardian settings saved", Colors.green.shade600);
       }
     } catch (e) {
-      _showSnackBar("Save Failed", Colors.red);
+      _showSnackBar("Save failed. Try again.", Colors.red.shade600);
     } finally {
       setState(() => _isSyncing = false);
     }
   }
 
   Future<void> _sendSOS() async {
+    HapticFeedback.heavyImpact();
     if (_phoneController.text.isEmpty) {
-      _showSnackBar("No Guardian Number Set", Colors.red);
+      _showSnackBar("No Guardian Number Set", Colors.red.shade600);
       return;
     }
     setState(() => _isSending = true);
@@ -102,18 +90,10 @@ class _EmergencyContactPageState extends State<EmergencyContactPage> {
       Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       String mapUrl = "https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}";
       String message = "EMERGENCY! I need help. My live location: $mapUrl";
-      
-      final Uri smsLaunchUri = Uri(
-        scheme: 'sms',
-        path: _phoneController.text,
-        queryParameters: <String, String>{'body': message},
-      );
-
-      if (await canLaunchUrl(smsLaunchUri)) {
-        await launchUrl(smsLaunchUri);
-      }
+      final Uri smsLaunchUri = Uri(scheme: 'sms', path: _phoneController.text, queryParameters: {'body': message});
+      if (await canLaunchUrl(smsLaunchUri)) await launchUrl(smsLaunchUri);
     } catch (e) {
-      _showSnackBar("SOS Failed", Colors.red);
+      _showSnackBar("SOS Failed", Colors.red.shade600);
     } finally {
       setState(() => _isSending = false);
     }
@@ -121,144 +101,123 @@ class _EmergencyContactPageState extends State<EmergencyContactPage> {
 
   void _showSnackBar(String msg, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: color, behavior: SnackBarBehavior.floating),
+      SnackBar(
+        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w600)),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // PopScope prevents the physical back button from working
-    return PopScope(
-      canPop: false,
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        body: _isSyncing 
-          ? const Center(child: CircularProgressIndicator()) 
-          : SafeArea( // Ensures content doesn't hit the notch/status bar
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 40),
+    return Scaffold(
+      backgroundColor: const Color(0xFFF9FAFB),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: const Text("Emergency Hub", style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+        centerTitle: true,
+        actions: [IconButton(onPressed: () {}, icon: const Icon(Icons.info_outline, color: Colors.black54))],
+      ),
+      body: _isSyncing 
+        ? const Center(child: CircularProgressIndicator())
+        : ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            children: [
+              const Text("Set up your lifeline.", style: TextStyle(color: Colors.black54, fontSize: 16)),
+              const SizedBox(height: 24),
+              
+              // Input Container
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.grey.shade200),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 5))],
+                ),
+                padding: const EdgeInsets.all(28),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    const Text("Guardian Settings", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 20),
-                    const Icon(Icons.emergency_share_rounded, size: 100, color: Colors.red),
-                    const SizedBox(height: 20),
-                    const Text(
-                      "Emergency Hub",
-                      style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-                    ),
-                    const Text(
-                      "Configure your lifeline",
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 40),
-                    
-                    // Input Card
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200]!.withOpacity(0.5),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.grey[200]!),
-                      ),
-                      child: Column(
-                        children: [
-                          TextField(
-                            controller: _nameController,
-                            decoration: const InputDecoration(
-                              labelText: "Guardian Name",
-                              prefixIcon: Icon(Icons.person_outline),
-                              border: InputBorder.none,
-                            ),
-                          ),
-                          const Divider(),
-                          TextField(
-                            controller: _phoneController,
-                            keyboardType: TextInputType.phone,
-                            decoration: const InputDecoration(
-                              labelText: "Guardian Phone",
-                              prefixIcon: Icon(Icons.phone_outlined),
-                              border: InputBorder.none,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 20),
+                    _buildInputField(_nameController, "Guardian Name", Icons.person_outline),
+                    const SizedBox(height: 16),
+                    _buildInputField(_phoneController, "Guardian Phone", Icons.phone_outlined, TextInputType.phone),
+                    const SizedBox(height: 24),
                     SizedBox(
                       width: double.infinity,
-                      height: 55,
-                      child: ElevatedButton(
+                      height: 56,
+                      child: FilledButton(
                         onPressed: _handleSave,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red[50],
-                          foregroundColor: Colors.red[900],
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                         ),
-                        child: const Text("Save Guardian Info", style: TextStyle(fontWeight: FontWeight.bold)),
+                        child: const Text("Save Guardian Info", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       ),
-                    ),
-
-                    const SizedBox(height: 60),
-
-                    // SOS TRIGGER
-                    GestureDetector(
-                      onTap: _isSending ? null : _sendSOS,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          // Pulsing Background Effect
-                          Container(
-                            height: 180,
-                            width: 180,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.red.withOpacity(0.1),
-                            ),
-                          ),
-                          Container(
-                            height: 150,
-                            width: 150,
-                            decoration: BoxDecoration(
-                              color: _isSending ? Colors.grey : Colors.red[800],
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.red.withOpacity(0.4),
-                                  blurRadius: 25,
-                                  spreadRadius: 5,
-                                )
-                              ],
-                            ),
-                            child: Center(
-                              child: _isSending
-                                ? const CircularProgressIndicator(color: Colors.white)
-                                : const Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.bolt, color: Colors.white, size: 40),
-                                      Text(
-                                        "SOS",
-                                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 24),
-                                      ),
-                                    ],
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 30),
-                    const Text(
-                      "Hold for 1 second to trigger help",
-                      style: TextStyle(color: Colors.grey, fontSize: 12),
                     ),
                   ],
                 ),
               ),
-            ),
-      ),
+              
+              const SizedBox(height: 64),
+              
+              // SOS Trigger Area
+              const Center(child: Text("SOS TRIGGER", style: TextStyle(letterSpacing: 2, fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black38))),
+              const SizedBox(height: 24),
+              Center(
+                child: GestureDetector(
+                  onTap: _isSending ? null : _sendSOS,
+                  child: Container(
+                    height: 150,
+                    width: 150,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.red.shade600,
+                      boxShadow: [
+                        BoxShadow(color: Colors.red.shade200, blurRadius: 20, spreadRadius: 6),
+                      ],
+                    ),
+                    child: _isSending 
+                      ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                      : const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text("SOS", style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w900)),
+                          ],
+                        ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Center(child: Text("Hold for 1 second to trigger help", style: TextStyle(color: Colors.black45, fontSize: 13))),
+            ],
+          ),
+    );
+  }
+
+  Widget _buildInputField(TextEditingController controller, String label, IconData icon, [TextInputType type = TextInputType.text]) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black45)),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          keyboardType: type,
+          decoration: InputDecoration(
+            prefixIcon: Icon(icon, color: Colors.black45),
+            filled: true,
+            fillColor: Colors.grey.shade50,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Colors.black, width: 2)),
+          ),
+        ),
+      ],
     );
   }
 }

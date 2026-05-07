@@ -17,7 +17,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _enableTTS = true;
   bool _enableVibration = true;
   bool _autoSiren = false;
-  String _guardianPhone = "Add Number +";
+  // String _guardianPhone = "Add Number +";
 
   @override
   void initState() {
@@ -45,7 +45,7 @@ class _SettingsPageState extends State<SettingsPage> {
       _enableTTS = prefs.getBool('enableTTS') ?? true;
       _enableVibration = prefs.getBool('enableVibration') ?? true;
       _autoSiren = prefs.getBool('autoSiren') ?? false;
-      _guardianPhone = prefs.getString('guardianPhone') ?? "Add Number +";
+      // _guardianPhone = prefs.getString('guardianPhone') ?? "Add Number +";
     });
   }
 
@@ -116,14 +116,14 @@ class _SettingsPageState extends State<SettingsPage> {
             (val) => _updateSetting('autoSiren', val),
           ),
 
-          const SizedBox(height: 24),
-          _buildHeader("Emergency Contacts"),
-          _buildClickTile(
-            "Primary Guardian",
-            _guardianPhone,
-            Icons.contact_phone,
-            () => _showGuardianDialog(),
-          ),
+          // const SizedBox(height: 24),
+          // _buildHeader("Emergency Contacts"),
+          // _buildClickTile(
+          //   "Primary Guardian",
+          //   _guardianPhone,
+          //   Icons.contact_phone,
+          //   () => _showGuardianDialog(),
+          // ),
 
           const SizedBox(height: 24),
           _buildHeader("System Diagnostics"),
@@ -174,52 +174,52 @@ class _SettingsPageState extends State<SettingsPage> {
     ),
   );
 
-  Widget _buildClickTile(
-    String title,
-    String subtitle,
-    IconData icon,
-    VoidCallback onTap,
-  ) => Card(
-    margin: const EdgeInsets.symmetric(vertical: 4),
-    child: ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: const Icon(Icons.edit, size: 18),
-      onTap: onTap,
-    ),
-  );
+  // Widget _buildClickTile(
+  //   String title,
+  //   String subtitle,
+  //   IconData icon,
+  //   VoidCallback onTap,
+  // ) => Card(
+  //   margin: const EdgeInsets.symmetric(vertical: 4),
+  //   child: ListTile(
+  //     leading: Icon(icon),
+  //     title: Text(title),
+  //     subtitle: Text(subtitle),
+  //     trailing: const Icon(Icons.edit, size: 18),
+  //     onTap: onTap,
+  //   ),
+  // );
 
-  void _showGuardianDialog() {
-    TextEditingController controller = TextEditingController(
-      text: _guardianPhone == "Add Number +" ? "" : _guardianPhone,
-    );
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Update Contact"),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(hintText: "e.g., +923001234567"),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (controller.text.length > 5) {
-                // Simple validation
-                _updateSetting('guardianPhone', controller.text);
-                Navigator.pop(context);
-              }
-            },
-            child: const Text("Save"),
-          ),
-        ],
-      ),
-    );
-  }
+  // void _showGuardianDialog() {
+  //   TextEditingController controller = TextEditingController(
+  //     text: _guardianPhone == "Add Number +" ? "" : _guardianPhone,
+  //   );
+  //   showDialog(
+  //     context: context,
+  //     builder: (context) => AlertDialog(
+  //       title: const Text("Update Contact"),
+  //       content: TextField(
+  //         controller: controller,
+  //         keyboardType: TextInputType.phone,
+  //         decoration: const InputDecoration(hintText: "e.g., +923001234567"),
+  //       ),
+  //       actions: [
+  //         TextButton(
+  //           onPressed: () => Navigator.pop(context),
+  //           child: const Text("Cancel"),
+  //         ),
+  //         ElevatedButton(
+  //           onPressed: () {
+  //             if (controller.text.length > 5) {
+  //               // Simple validation
+  //               _updateSetting('guardianPhone', controller.text);
+  //               Navigator.pop(context);
+  //             }
+  //           },
+  //           child: const Text("Save"),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 }
