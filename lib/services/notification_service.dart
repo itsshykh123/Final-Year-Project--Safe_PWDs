@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:vibration/vibration.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
@@ -52,7 +53,12 @@ class NotificationService {
     RemoteMessage? message,
     String? title,
     String? body,
-  }) async {
+  }) async {  
+    final prefs = await SharedPreferences.getInstance();
+    bool isAdmin = prefs.getBool('isAdmin') ?? false;
+
+    if (isAdmin) return;
+	
     // 1. Determine the content (Prioritize manual strings, then FCM, then defaults)
     String displayTitle =
         title ?? message?.notification?.title ?? "⚠️ EMERGENCY";
